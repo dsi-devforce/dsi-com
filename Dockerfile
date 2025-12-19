@@ -16,7 +16,7 @@ COPY requirements.txt /app/
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
 # Copiar el código fuente
-COPY ./backend /app/
+COPY . /app/
 
 EXPOSE 8017
 
