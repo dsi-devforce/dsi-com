@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard WhatsApp</title>
+</head>
+<body>
+    <h1>Conexiones Activas</h1>
+    <ul>
+        {% for conn in connections %}
+            <li>
+                <strong>{{ conn.name }}</strong>
+                (ID: {{ conn.phone_number_id }}) -
+                Bot: {{ conn.chatbot.name|default:"Ninguno" }}
+                [{% if conn.is_active %}ACTIVO{% else %}INACTIVO{% endif %}]
+     
+            </li>
+        {% empty %}
+            <li>No hay conexiones configuradas.</li>
+        {% endfor %}
+    
+             <p>
+        <a href="{% url 'create_connection' %}">➕ Vincular Nueva Cuenta</a>
+    </p>
+
+    </ul>
+
+<ul>
+        {% for conn in connections %}
+            <li style="margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px;">
+                <div style="display: flex; align-items: center;">
+                    <div style="flex-grow: 1;">
+                        <strong>{{ conn.name }}</strong> <br>
+                        <small>ID: {{ conn.phone_number_id }}</small> <br>
+                        Bot: {{ conn.chatbot.name|default:"Ninguno" }} <br>
+                        Estado: [{% if conn.is_active %}ACTIVO{% else %}INACTIVO{% endif %}]
+                    </div>
+                    
+                    {% if conn.display_phone_number %}
+                        <div style="text-align: center; margin-left: 20px;">
+                            <!-- Aquí cargamos la imagen directamente desde la URL que creamos -->
+                            <img src="{% url 'connection_qr' conn.id %}" alt="QR WhatsApp" width="100" height="100" style="border: 1px solid #ddd;">
+                            <br>
+                            <small>Escanear para probar</small>
+                        </div>
+                    {% else %}
+                        <div style="margin-left: 20px; color: #999;">
+                            <small>Sin número<br>configurado</small>
+                        </div>
+                    {% endif %}
+                </div>
+            </li>
+        {% empty %}
+            <li>No hay conexiones configuradas.</li>
+        {% endfor %}
+    </ul>
+<ul>
+        {% for conn in connections %}
+            <li style="margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px;">
+                <div style="display: flex; align-items: center;">
+                    <div style="flex-grow: 1;">
+                        <strong>{{ conn.name }}</strong> <br>
+                        <small>ID: {{ conn.phone_number_id }}</small> <br>
+                        Bot: {{ conn.chatbot.name|default:"Ninguno" }} <br>
+                        Estado: [{% if conn.is_active %}ACTIVO{% else %}INACTIVO{% endif %}]
+                    </div>
+                    
+                    {% if conn.display_phone_number %}
+                        <div style="text-align: center; margin-left: 20px;">
+                            <!-- Aquí cargamos la imagen directamente desde la URL que creamos -->
+                            <img src="{% url 'connection_qr' conn.id %}" alt="QR WhatsApp" width="100" height="100" style="border: 1px solid #ddd;">
+                            <br>
+                            <small>Escanear para probar</small>
+                        </div>
+                    {% else %}
+                        <div style="margin-left: 20px; color: #999;">
+                            <small>Sin número<br>configurado</small>
+                        </div>
+                    {% endif %}
+                </div>
+            </li>
+        {% empty %}
+            <li>No hay conexiones configuradas.</li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

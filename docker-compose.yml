@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # 1. Tu aplicación Django (UM)
+  web:
+    build: .
+    #command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8017:8000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:             # <--- NUEVO: Se une a la red compartida
+      - red_global_proyectos
+
+  # 2. El Servicio de PostgreSQL
+  db:
+    image: postgres:15
+    container_name: postgres_dsicom  # <--- NUEVO: Nombre fijo para que DatMail lo encuentre
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=dsi_com_db
+      - POSTGRES_USER=dsi_user
+      - POSTGRES_PASSWORD=dsi1212A
+    ports:
+      - "5438:5432"
+    networks:             # <--- NUEVO: Se une a la red compartida
+      - red_global_proyectos
+
+volumes:
+  postgres_data:
+
+# 3. Definición de la Red Compartida
+networks:
+  red_global_proyectos:
+    name: red_global_proyectos  # Nombre explícito para usarlo en otros proyectos
+    driver: bridge
