@@ -27,8 +27,23 @@
 <ul>
         {% for conn in connections %}
             <li style="margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px;">
+              <div style="flex-grow: 1;">
+                            <strong>{{ conn.name }}</strong> <br>
+                            <small>ID: {{ conn.phone_number_id }}</small> <br>
+                            Bot: {{ conn.chatbot.name|default:"Ninguno" }} <br>
+                            Estado: [{% if conn.is_active %}ACTIVO{% else %}INACTIVO{% endif %}]
+
+                            <!-- Botón nuevo para ir al chat -->
+                            <div style="margin-top: 10px;">
+                                <a href="{% url 'chat_interface' conn.id %}" style="background: #008f6f; color: white; padding: 5px 10px; text-decoration: none; border-radius: 4px; font-size: 14px;">
+                                    💬 Abrir Chat
+                                </a>
+                            </div>
+                        </div>
+
                 <div style="display: flex; align-items: center;">
                     <div style="flex-grow: 1;">
+
                         <strong>{{ conn.name }}</strong> <br>
                         <small>ID: {{ conn.phone_number_id }}</small> <br>
                         Bot: {{ conn.chatbot.name|default:"Ninguno" }} <br>

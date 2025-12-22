@@ -12,7 +12,8 @@ from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-
+from rest_framework.permissions import AllowAny
+from rest_framework.decorators import permission_classes
 from .forms import ConnectionForm
 from .models import WhatsappConnection
 
@@ -158,6 +159,7 @@ def process_message(connection, message_data):
 
 # --- VISTAS PRINCIPALES ---
 
+@permission_classes([AllowAny])
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def webhook(request):
@@ -278,3 +280,66 @@ def generate_qr(request, connection_id):
     img.save(buffer, format="PNG")
 
     return HttpResponse(buffer.getvalue(), content_type="image/png")
+
+
+def chat_interface(request, connection_id):
+    """
+    Renderiza la interfaz de chat para una conexión específica.
+    """
+    connection = get_object_or_404(WhatsappConnection, pk=connection_id)
+
+    # NOTA: Aquí deberías obtener los mensajes reales de tu base de datos.
+    # Como no tengo acceso a tu models.py, simularé la estructura de datos
+    # que el template espera. Debes reemplazar esto con una query real.
+    # Ejemplo: messages_list = Message.objects.filter(connection=connection).order_by('timestamp')
+
+    # MOCK DATA (Para demostración)
+    # Debes agrupar los mensajes por número de teléfono (contactos)
+    conversations = [
+        {'phone': '5215555555555', 'last_msg': 'Hola, precio?', 'timestamp': '10:00'},
+        {'phone': '34666666666', 'last_msg': 'Gracias', 'timestamp': '09:30'},
+    ]
+
+    context = {
+        'connection': connection,
+        'conversations': conversations,
+        # Si seleccionas un chat específico:
+        'active_phone': request.GET.get('phone'),
+    }
+    return render(request, 'whatsapp_manager/chat.html', context)
+
+
+@require_http_methods(["POST"])
+def send_message_ui(request, connection_id):
+    """
+    Endpoint interno para enviar mensajes desde la interfaz web (AJAX).
+    """
+    connection = get_object_or_404(WhatsappConnection, pk=connection_id)
+
+    try:
+        data = json.loads(request.body)
+        phone_number = data.get('phone')
+        message_body = data.get('message')
+
+        if not phone_number or not message_body:
+            return JsonResponse({'status': 'error', 'message': 'Faltan datos'}, status=400)
+
+        # Construir payload para la API de WhatsApp
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": phone_number,
+            "type": "text",
+            "text": {"body": message_body}
+        }
+
+        # Usar tu función existente para enviar
+        send_whatsapp_message(connection, payload)
+
+        # AQUÍ DEBERÍAS GUARDAR EL MENSAJE SALIENTE EN TU DB (MODELO MESSAGE)
+        # Message.objects.create(..., direction='outbound', body=message_body)
+
+        return JsonResponse({'status': 'ok', 'message': 'Enviado'}, status=200)
+
+    except Exception as e:
+        logger.error(f"Error enviando mensaje UI: {e}")
+        return JsonResponse({'status': 'error', 'message': str(e)}, status=500)

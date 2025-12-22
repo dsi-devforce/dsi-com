@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat - {{ connection.name }}</title>
+    <style>
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; overflow: hidden; background-color: #d1d7db; }
+
+        /* Layout General */
+        .chat-container { display: flex; width: 100%; height: 100%; max-width: 1600px; margin: 0 auto; background: #fff; box-shadow: 0 1px 1px rgba(0,0,0,0.1); }
+
+        /* Sidebar (Contactos) */
+        .sidebar { width: 30%; border-right: 1px solid #e9edef; display: flex; flex-direction: column; background: #fff; }
+        .sidebar-header { padding: 10px 16px; background: #f0f2f5; border-bottom: 1px solid #d1d7db; height: 60px; display: flex; align-items: center; justify-content: space-between; }
+        .search-bar { padding: 10px; background: #fff; border-bottom: 1px solid #f0f2f5; }
+        .contact-list { flex: 1; overflow-y: auto; }
+
+        .contact-item { display: flex; padding: 10px 15px; cursor: pointer; border-bottom: 1px solid #f0f2f5; transition: background .2s; }
+        .contact-item:hover, .contact-item.active { background-color: #f0f2f5; }
+        .avatar { width: 45px; height: 45px; background: #dfe3e5; border-radius: 50%; margin-right: 15px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 20px; }
+        .contact-info { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+        .contact-name { font-weight: 500; color: #111b21; margin-bottom: 3px; }
+        .contact-last-msg { font-size: 13px; color: #667781; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* Area Principal de Chat */
+        .main-chat { width: 70%; display: flex; flex-direction: column; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); background-repeat: repeat; background-color: #efeae2; }
+
+        .chat-header { padding: 10px 16px; background: #f0f2f5; height: 60px; display: flex; align-items: center; border-bottom: 1px solid #d1d7db; }
+
+        /* Mensajes */
+        .messages-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+
+        .message { max-width: 65%; padding: 6px 10px; border-radius: 7.5px; font-size: 14.2px; line-height: 19px; color: #111b21; position: relative; box-shadow: 0 1px 0.5px rgba(0,0,0,0.13); }
+
+        .message.incoming { align-self: flex-start; background: #fff; border-top-left-radius: 0; }
+        .message.outgoing { align-self: flex-end; background: #d9fdd3; border-top-right-radius: 0; }
+
+        .msg-time { font-size: 11px; color: #667781; float: right; margin-left: 10px; margin-top: 5px; }
+
+        /* Area de Input */
+        .input-area { padding: 10px 16px; background: #f0f2f5; display: flex; align-items: center; gap: 10px; }
+        .input-box { flex: 1; padding: 12px; border: none; border-radius: 8px; outline: none; font-size: 15px; }
+        .btn-send { background: #00a884; color: white; border: none; padding: 10px 15px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+        .btn-send:hover { background: #008f6f; }
+
+        /* Utilidades */
+        .placeholder-view { display: flex; align-items: center; justify-content: center; height: 100%; flex-direction: column; color: #667781; }
+    </style>
+</head>
+<body>
+
+<div class="chat-container">
+    <!-- BARRA LATERAL -->
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <span><strong>{{ connection.name }}</strong> ({{ connection.display_phone_number }})</span>
+            <a href="{% url 'dashboard' %}" style="text-decoration: none; color: #54656f;">🔙 Salir</a>
+        </div>
+
+        <div class="search-bar">
+            <input type="text" placeholder="Buscar chat..." style="width: 100%; padding: 5px; border-radius: 5px; border: 1px solid #dfe3e5;">
+        </div>
+
+        <div class="contact-list">
+            {% for chat in conversations %}
+            <div class="contact-item {% if active_phone == chat.phone %}active{% endif %}" onclick="window.location.href='?phone={{ chat.phone }}'">
+                <div class="avatar">👤</div>
+                <div class="contact-info">
+                    <div class="contact-name">+{{ chat.phone }}</div>
+                    <div class="contact-last-msg">{{ chat.last_msg }}</div>
+                </div>
+            </div>
+            {% empty %}
+                <div style="padding: 20px; text-align: center; color: #999;">No hay conversaciones activas</div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- CHAT PRINCIPAL -->
+    <div class="main-chat">
+        {% if active_phone %}
+            <div class="chat-header">
+                <div class="avatar" style="width: 40px; height: 40px; margin-right: 10px;">👤</div>
+                <div>
+                    <div class="contact-name">+{{ active_phone }}</div>
+                    <div style="font-size: 12px; color: #667781;">En línea (Simulado)</div>
+                </div>
+            </div>
+
+            <div class="messages-area" id="messagesArea">
+                <!-- NOTA: Debes iterar sobre los mensajes REALES pasados en el contexto -->
+                <!-- Ejemplo: -->
+                <!--
+                {% for msg in messages_history %}
+                    <div class="message {% if msg.is_outgoing %}outgoing{% else %}incoming{% endif %}">
+                        {{ msg.text_body }}
+                        <span class="msg-time">{{ msg.timestamp|date:"H:i" }}</span>
+                    </div>
+                {% endfor %}
+                -->
+
+                <!-- MOCK VISUAL -->
+                <div class="message incoming">Hola, ¿cuál es el precio? <span class="msg-time">10:00</span></div>
+                <div class="message outgoing">Hola, nuestros precios inician en $100. <span class="msg-time">10:01</span></div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" class="input-box" id="msgInput" placeholder="Escribe un mensaje" autofocus onkeypress="handleEnter(event)">
+                <button class="btn-send" onclick="sendMessage()">➤</button>
+            </div>
+
+        {% else %}
+            <div class="placeholder-view">
+                <h3>WhatsApp Manager</h3>
+                <p>Selecciona un contacto para comenzar a chatear.</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    const activePhone = "{{ active_phone }}";
+    const connectionId = "{{ connection.id }}";
+
+    function handleEnter(e) {
+        if (e.key === 'Enter') sendMessage();
+    }
+
+    function sendMessage() {
+        const input = document.getElementById('msgInput');
+        const text = input.value.trim();
+
+        if (!text || !activePhone) return;
+
+        // Renderizar mensaje inmediatamente (Optimistic UI)
+        const chatArea = document.getElementById('messagesArea');
+        const newMsg = document.createElement('div');
+        newMsg.className = 'message outgoing';
+        newMsg.innerHTML = `${text} <span class="msg-time">Ahora</span>`;
+        chatArea.appendChild(newMsg);
+        chatArea.scrollTop = chatArea.scrollHeight; // Scroll al fondo
+
+        input.value = '';
+
+        // Enviar al Backend
+        fetch(`/whatsapp/chat/${connectionId}/send/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: JSON.stringify({
+                phone: activePhone,
+                message: text
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if(data.status !== 'ok') {
+                alert('Error enviando mensaje: ' + data.message);
+            }
+        })
+        .catch(err => console.error('Error:', err));
+    }
+
+    // Scroll al fondo al cargar
+    window.onload = function() {
+        const chatArea = document.getElementById('messagesArea');
+        if(chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+    }
+</script>
+
+</body>
+</html>
