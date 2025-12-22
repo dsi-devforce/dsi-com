@@ -1,8 +1,12 @@
 import json
 import logging
+import os
+import mimetypes
 from io import BytesIO
 
+import requests
 import qrcode
+from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render, redirect, get_object_or_404
@@ -14,17 +18,153 @@ from .models import WhatsappConnection
 
 logger = logging.getLogger(__name__)
 
+# Configuración de la API de Meta
+GRAPH_API_VERSION = "v18.0"
+
+
+# --- FUNCIONES AUXILIARES DE LÓGICA (SERVICES) ---
+
+def send_whatsapp_message(connection, payload):
+    """
+    Envía una carga útil (payload) JSON a la API de WhatsApp Business.
+    """
+    url = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{connection.phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {connection.access_token}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        # logger.info(f"Mensaje enviado: {response.json()}") # Descomentar para debug detallado
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error enviando mensaje a WhatsApp: {e}")
+        if response is not None:
+            logger.error(f"Detalle respuesta Meta: {response.text}")
+
+
+def handle_received_media(connection, media_id, mime_type):
+    """
+    Descarga un archivo multimedia desde los servidores de Meta.
+    Retorna la ruta relativa del archivo guardado o None si falla.
+    """
+    # 1. Obtener la URL de descarga del objeto multimedia
+    url_info = f"https://graph.facebook.com/{GRAPH_API_VERSION}/{media_id}"
+    headers = {"Authorization": f"Bearer {connection.access_token}"}
+
+    try:
+        # Paso A: Obtener metadatos (URL real)
+        resp_info = requests.get(url_info, headers=headers)
+        resp_info.raise_for_status()
+        media_url = resp_info.json().get('url')
+
+        if not media_url:
+            return None
+
+        # Paso B: Descargar el contenido binario
+        media_content = requests.get(media_url, headers=headers)
+        media_content.raise_for_status()
+
+        # Paso C: Determinar extensión y nombre
+        extension = mimetypes.guess_extension(mime_type) or '.bin'
+        filename = f"{media_id}{extension}"
+
+        # Ruta de guardado (media/whatsapp_received/...)
+        save_dir = os.path.join(settings.MEDIA_ROOT, 'whatsapp_received')
+        os.makedirs(save_dir, exist_ok=True)
+
+        full_path = os.path.join(save_dir, filename)
+
+        with open(full_path, 'wb') as f:
+            f.write(media_content.content)
+
+        logger.info(f"Archivo multimedia guardado en: {full_path}")
+        return full_path
+
+    except Exception as e:
+        logger.error(f"Error descargando media {media_id}: {e}")
+        return None
+
+
+def process_message(connection, message_data):
+    """
+    Analiza el mensaje entrante y decide qué responder según el Chatbot configurado.
+    """
+    sender_phone = message_data.get('from')
+    msg_type = message_data.get('type')
+
+    reply_payload = None
+
+    # --- 1. PROCESAMIENTO DE TEXTO ---
+    if msg_type == 'text':
+        text_body = message_data['text']['body'].strip().lower()
+        response_text = ""
+
+        # Lógica basada en el 'slug' del Chatbot asignado
+        chatbot_slug = connection.chatbot.slug if connection.chatbot else None
+
+        if chatbot_slug == 'bot_ventas':
+            if 'precio' in text_body or 'costo' in text_body:
+                response_text = "💰 Nuestros servicios empiezan desde $100 USD. ¿Te gustaría ver el catálogo?"
+            elif 'hola' in text_body:
+                response_text = "¡Hola! Soy el asistente de Ventas. Escribe 'precio' para saber nuestros costos."
+            else:
+                response_text = "Soy el bot de ventas. Actualmente solo respondo a consultas de precios."
+
+        elif chatbot_slug == 'bot_soporte':
+            if 'ayuda' in text_body or 'error' in text_body:
+                response_text = "⚠️ Hemos registrado tu incidencia. Un técnico la revisará pronto."
+            else:
+                response_text = "Soporte Técnico: Por favor describe tu error o escribe 'ayuda'."
+
+        else:
+            # Bot por defecto (si no hay chatbot asignado o slug desconocido)
+            response_text = f"🤖 Recibido: {text_body}. (Sin chatbot configurado)"
+
+        # Construir respuesta
+        reply_payload = {
+            "messaging_product": "whatsapp",
+            "to": sender_phone,
+            "type": "text",
+            "text": {"body": response_text}
+        }
+
+    # --- 2. PROCESAMIENTO DE MULTIMEDIA ---
+    elif msg_type in ['image', 'document', 'audio', 'video', 'sticker']:
+        media_node = message_data[msg_type]
+        media_id = media_node.get('id')
+        mime_type = media_node.get('mime_type')
+
+        # Descargar archivo
+        saved_path = handle_received_media(connection, media_id, mime_type)
+
+        if saved_path:
+            response_text = f"✅ He recibido tu archivo ({msg_type}) correctamente."
+        else:
+            response_text = f"❌ Hubo un error al intentar descargar tu archivo ({msg_type})."
+
+        reply_payload = {
+            "messaging_product": "whatsapp",
+            "to": sender_phone,
+            "type": "text",
+            "text": {"body": response_text}
+        }
+
+    # Enviar la respuesta si se generó alguna
+    if reply_payload:
+        send_whatsapp_message(connection, reply_payload)
+
+
+# --- VISTAS PRINCIPALES ---
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def webhook(request):
     """
-    Webhook principal para WhatsApp.
-    GET: Verificación del token con Meta.
-    POST: Recepción de mensajes.
+    Endpoint principal para la API de WhatsApp.
     """
-
-    # 1. VERIFICACIÓN DEL WEBHOOK (Meta valida tu URL)
+    # 1. VERIFICACIÓN (GET)
     if request.method == "GET":
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
@@ -32,67 +172,66 @@ def webhook(request):
 
         if mode and token:
             if mode == 'subscribe':
-                # Buscamos si existe alguna conexión con ese verify_token
-                # NOTA: En un escenario real con muchos clientes, podrías necesitar una lógica más específica
-                # para saber qué cliente está intentando verificar, o usar un token global.
-                # Aquí validamos si el token existe en CUALQUIER conexión activa.
+                # Verifica si el token existe en alguna conexión activa
                 exists = WhatsappConnection.objects.filter(verify_token=token, is_active=True).exists()
-
                 if exists:
-                    logger.info("Webhook verificado correctamente.")
                     return HttpResponse(challenge, status=200)
                 else:
-                    logger.warning("Intento de verificación con token inválido.")
-                    return HttpResponse("Token inválido", status=403)
-        return HttpResponse("Error de verificación", status=403)
+                    return HttpResponse("Token de verificación inválido", status=403)
+        return HttpResponse("Fallo en verificación", status=403)
 
-    # 2. RECEPCIÓN DE MENSAJES (POST)
+    # 2. RECEPCIÓN DE EVENTOS (POST)
     elif request.method == "POST":
         try:
             body = json.loads(request.body.decode('utf-8'))
-            logger.info(f"Payload recibido: {body}")
 
-            # Verificar si es un evento de mensaje de WhatsApp
+            # Verificar estructura básica de WhatsApp
             if 'object' in body and body['object'] == 'whatsapp_business_account':
                 entries = body.get('entry', [])
+
                 for entry in entries:
                     changes = entry.get('changes', [])
                     for change in changes:
                         value = change.get('value', {})
 
-                        # Extraer ID del número que recibe el mensaje (nuestro cliente)
+                        # Obtener ID del teléfono que recibe (nuestro negocio)
                         metadata = value.get('metadata', {})
                         phone_number_id = metadata.get('phone_number_id')
 
                         if phone_number_id:
-                            # Buscar la conexión correspondiente
-                            connection = WhatsappConnection.objects.filter(phone_number_id=phone_number_id,
-                                                                           is_active=True).first()
+                            connection = WhatsappConnection.objects.filter(
+                                phone_number_id=phone_number_id,
+                                is_active=True
+                            ).first()
 
                             if connection:
-                                messages = value.get('messages', [])
-                                for message in messages:
-                                    # AQUÍ ES DONDE DELEGARÍAS AL CHATBOT
-                                    logger.info(f"Mensaje recibido para {connection.name}: {message}")
-                                    # procesar_mensaje(connection, message) 
+                                # Procesar mensajes entrantes
+                                messages_list = value.get('messages', [])
+                                for message in messages_list:
+                                    # logger.info(f"Procesando mensaje de {message.get('from')}")
+                                    process_message(connection, message)
                             else:
-                                logger.warning(f"Recibido mensaje para ID desconocido: {phone_number_id}")
+                                logger.warning(
+                                    f"Mensaje recibido en ID {phone_number_id} sin conexión activa asociada.")
 
             return JsonResponse({'status': 'ok'}, status=200)
 
         except json.JSONDecodeError:
-            return JsonResponse({'status': 'error', 'message': 'Invalid JSON'}, status=400)
+            return JsonResponse({'status': 'error', 'message': 'JSON inválido'}, status=400)
         except Exception as e:
-            logger.error(f"Error procesando webhook: {str(e)}")
-            return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+            logger.error(f"Excepción en webhook: {str(e)}")
+            # Siempre devolver 200 a Meta para evitar reintentos infinitos si falla nuestro código
+            return JsonResponse({'status': 'error', 'message': str(e)}, status=200)
 
 
 def dashboard(request):
+    """Listado de conexiones activas."""
     connections = WhatsappConnection.objects.all()
     return render(request, 'whatsapp_manager/dashboard.html', {'connections': connections})
 
 
 def create_connection(request):
+    """Formulario para crear nueva conexión."""
     if request.method == 'POST':
         form = ConnectionForm(request.POST)
         if form.is_valid():
@@ -102,26 +241,28 @@ def create_connection(request):
         else:
             messages.error(request, 'Por favor corrige los errores en el formulario.')
     else:
-        # Sugerir un verify_token aleatorio o por defecto para facilitar
-        form = ConnectionForm(initial={'verify_token': 'mi_token_seguro_123'})
+        # Generar token aleatorio simple por defecto
+        import secrets
+        random_token = secrets.token_urlsafe(16)
+        form = ConnectionForm(initial={'verify_token': random_token})
 
     return render(request, 'whatsapp_manager/create_connection.html', {'form': form})
 
 
 def generate_qr(request, connection_id):
     """
-    Genera una imagen QR PNG para una conexión específica.
-    El QR apunta a https://wa.me/<numero>
+    Genera un código QR que apunta al link wa.me del número configurado.
     """
     connection = get_object_or_404(WhatsappConnection, pk=connection_id)
 
     if not connection.display_phone_number:
-        return HttpResponse("Número de teléfono no configurado para esta conexión", status=404)
+        return HttpResponse("Número de visualización no configurado", status=404)
 
-    # Crear el enlace de WhatsApp
-    wa_link = f"https://wa.me/{connection.display_phone_number}"
+    # Crear enlace (eliminar espacios o guiones si existen)
+    clean_number = ''.join(filter(str.isdigit, connection.display_phone_number))
+    wa_link = f"https://wa.me/{clean_number}"
 
-    # Generar el QR
+    # Configuración del QR
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -133,7 +274,6 @@ def generate_qr(request, connection_id):
 
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Guardar en memoria (buffer) en lugar de disco
     buffer = BytesIO()
     img.save(buffer, format="PNG")
 

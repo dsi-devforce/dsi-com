@@ -27,7 +27,9 @@ DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
-
+CSRF_TRUSTED_ORIGINS = [
+    "https://com.datametric-dsi.com",
+]
 # Application definition
 
 INSTALLED_APPS = [
