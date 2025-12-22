@@ -30,4 +30,16 @@ class WhatsappConnection(models.Model):
                                             help_text="Número real con código de país (sin +) para generar el enlace wa.me")
 
 
+class WebhookLog(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    payload = models.JSONField()  # Guarda el JSON completo tal cual llega
+    headers = models.JSONField(default=dict, blank=True) # Opcional: para ver headers
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Log {self.id} - {self.created_at}"
+
+
 
