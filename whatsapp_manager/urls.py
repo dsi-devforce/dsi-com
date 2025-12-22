@@ -8,4 +8,6 @@ urlpatterns = [
     path('qr/<int:connection_id>/', views.generate_qr, name='connection_qr'),
     path('chat/<int:connection_id>/', views.chat_interface, name='chat_interface'),
     path('chat/<int:connection_id>/send/', views.send_message_ui, name='send_message_ui'),
+    path('inspector/', views.webhook_inspector, name='webhook_inspector'),
+    path('inspector/api/', views.get_latest_logs, name='api_webhook_logs'),
 ]

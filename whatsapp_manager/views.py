@@ -15,7 +15,7 @@ from django.views.decorators.http import require_http_methods
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import permission_classes
 from .forms import ConnectionForm
-from .models import WhatsappConnection
+from .models import WhatsappConnection,WebhookLog
 
 logger = logging.getLogger(__name__)
 
@@ -162,19 +162,23 @@ def process_message(connection, message_data):
 @permission_classes([AllowAny])
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
+@permission_classes([AllowAny])
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
 def webhook(request):
     """
     Endpoint principal para la API de WhatsApp.
     """
     # 1. VERIFICACIÓN (GET)
     if request.method == "GET":
+        # ... existing code ...
+        # (Mantener lógica de GET igual)
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
 
         if mode and token:
             if mode == 'subscribe':
-                # Verifica si el token existe en alguna conexión activa
                 exists = WhatsappConnection.objects.filter(verify_token=token, is_active=True).exists()
                 if exists:
                     return HttpResponse(challenge, status=200)
@@ -187,16 +191,24 @@ def webhook(request):
         try:
             body = json.loads(request.body.decode('utf-8'))
 
+            # --- NUEVO: GUARDAR LOG ---
+            # Guardamos exactamente lo que llega para inspeccionarlo luego
+            try:
+                WebhookLog.objects.create(payload=body)
+            except Exception as log_error:
+                logger.error(f"No se pudo guardar el log: {log_error}")
+            # --------------------------
+
             # Verificar estructura básica de WhatsApp
             if 'object' in body and body['object'] == 'whatsapp_business_account':
+                # ... existing code ...
+                # (Mantener el resto de la lógica igual)
                 entries = body.get('entry', [])
 
                 for entry in entries:
                     changes = entry.get('changes', [])
                     for change in changes:
                         value = change.get('value', {})
-
-                        # Obtener ID del teléfono que recibe (nuestro negocio)
                         metadata = value.get('metadata', {})
                         phone_number_id = metadata.get('phone_number_id')
 
@@ -207,24 +219,43 @@ def webhook(request):
                             ).first()
 
                             if connection:
-                                # Procesar mensajes entrantes
                                 messages_list = value.get('messages', [])
                                 for message in messages_list:
-                                    # logger.info(f"Procesando mensaje de {message.get('from')}")
                                     process_message(connection, message)
-                            else:
-                                logger.warning(
-                                    f"Mensaje recibido en ID {phone_number_id} sin conexión activa asociada.")
 
             return JsonResponse({'status': 'ok'}, status=200)
-
+        # ... existing code ...
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'JSON inválido'}, status=400)
         except Exception as e:
             logger.error(f"Excepción en webhook: {str(e)}")
-            # Siempre devolver 200 a Meta para evitar reintentos infinitos si falla nuestro código
             return JsonResponse({'status': 'error', 'message': str(e)}, status=200)
 
+
+# --- VISTAS DE INSPECCIÓN (NUEVO) ---
+
+def webhook_inspector(request):
+    """Renderiza la página del visor de logs."""
+    return render(request, 'whatsapp_manager/webhook_inspector.html')
+
+
+def get_latest_logs(request):
+    """API JSON para obtener los logs más recientes (polling)."""
+    last_id = request.GET.get('last_id', 0)
+
+    # Obtener logs creados después del último ID que tiene el cliente
+    logs = WebhookLog.objects.filter(id__gt=last_id).order_by('-id')[:20]
+
+    data = []
+    for log in logs:
+        data.append({
+            'id': log.id,
+            'created_at': log.created_at.strftime("%H:%M:%S"),
+            'payload': log.payload
+        })
+
+    # Invertimos para que el orden cronológico sea correcto en la lista (antiguo -> nuevo) al agregar
+    return JsonResponse({'logs': list(reversed(data))})
 
 def dashboard(request):
     """Listado de conexiones activas."""
