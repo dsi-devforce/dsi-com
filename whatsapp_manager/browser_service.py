@@ -1,3 +1,4 @@
+import shutil
 import os
 import time
 import logging
@@ -18,68 +19,67 @@ driver_instance = None
 def iniciar_navegador():
     global driver_instance
 
-    # ... (tu código de verificación de driver existente sigue igual) ...
-
-    print("Configurando opciones de Chrome (Docker System)...")
-    chrome_options = Options()
-
-    # --- RUTAS ---
-    # Usamos las rutas HARDCODED que sabemos que funcionan en tu Docker
-    chrome_options.binary_location = "/usr/bin/chromium"
-    driver_path = "/usr/bin/chromedriver"
-
-    # --- FLAGS (Limpios y minimalistas) ---
-    chrome_options.add_argument("--headless=new")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-
-    # ❌ COMENTA ESTA LÍNEA TEMPORALMENTE (Culpable probable de crashes)
-    # chrome_options.add_argument("--remote-debugging-port=9222")
-
-    # ❌ COMENTA EL PERFIL TEMPORALMENTE (Para descartar corrupción)
-    user_data_dir = "/app/chrome_user_data"
-    chrome_options.add_argument(f"user-data-dir={user_data_dir}")
-
-    # User Agent
-    user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    lock_file = os.path.join(user_data_dir, "SingletonLock")
-    if os.path.exists(lock_file):
+    if driver_instance is not None:
         try:
-            os.remove(lock_file)
-            print("🧹 SingletonLock eliminado.")
+            _ = driver_instance.current_url
+            return driver_instance
         except:
-            pass
-    chrome_options.add_argument(f'user-agent={user_agent}')
+            print("⚠️ Navegador desconectado. Reiniciando...")
+            try:
+                driver_instance.quit()
+            except:
+                pass
+            driver_instance = None
 
-    # --- SERVICE CON LOGS ---
-    # Activamos logs detallados por si vuelve a fallar
-    service = Service(
-        executable_path=driver_path,
-        log_path="/app/chromedriver.log",
-        service_args=["--verbose"]
-    )
+    print("🔧 Configurando Chrome (Docker)...")
+
+    # Definir rutas y directorios
+    chrome_bin = "/usr/bin/chromium"
+    driver_path = "/usr/bin/chromedriver"
+    user_data_dir = "/app/chrome_user_data"
+
+    def get_options():
+        opts = Options()
+        opts.binary_location = chrome_bin
+        opts.add_argument(f"user-data-dir={user_data_dir}")
+        opts.add_argument("--headless=new")
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
+        opts.add_argument("--window-size=1920,1080")
+        opts.add_argument(
+            "user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        return opts
+
+    service = Service(executable_path=driver_path, log_path="/app/chromedriver.log")
 
     try:
-        driver = webdriver.Chrome(service=service, options=chrome_options)
-        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
-        print("✅ Navegador iniciado. Cargando WhatsApp...")
-        driver.get("https://web.whatsapp.com")
-
-        driver_instance = driver
-        return driver
-
+        # INTENTO 1: Arrancar normal
+        driver = webdriver.Chrome(service=service, options=get_options())
     except Exception as e:
-        print(f"❌ ERROR FATAL AL INICIAR CHROME: {e}")
-        # Leer el log detallado si falla
+        print(f"⚠️ Primer intento fallido ({e}). El perfil podría estar corrupto.")
+        print("Bg 🧹 Borrando perfil de usuario y reintentando...")
+
+        # BORRADO DE EMERGENCIA DEL PERFIL
         try:
-            with open("/app/chromedriver.log", "r") as f:
-                print("--- LOG DEL DRIVER (Últimas líneas) ---")
-                print(f.read()[-1000:])
-        except:
-            pass
-        raise e
+            shutil.rmtree(user_data_dir)
+        except Exception as delete_error:
+            print(f"No se pudo borrar directorio: {delete_error}")
+
+        # INTENTO 2: Arrancar limpio
+        try:
+            driver = webdriver.Chrome(service=service, options=get_options())
+        except Exception as final_e:
+            print(f"❌ ERROR FATAL IRRECUPERABLE: {final_e}")
+            raise final_e
+
+    # Configuración post-arranque
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    print("🌍 Navegando a WhatsApp Web...")
+    driver.get("https://web.whatsapp.com")
+
+    driver_instance = driver
+    return driver
 
 def obtener_qr_screenshot():
     """
