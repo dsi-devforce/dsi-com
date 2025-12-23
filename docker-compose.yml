@@ -23,10 +23,13 @@ services:
       - POSTGRES_DB=dsi_com_db
       - POSTGRES_USER=dsi_user
       - POSTGRES_PASSWORD=dsi1212A
+      - OLLAMA_HOST=http://host.docker.internal:11434/api/generate
     ports:
       - "5438:5432"
     networks:             # <--- NUEVO: Se une a la red compartida
       - red_global_proyectos
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   postgres_data:

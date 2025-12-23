@@ -14,7 +14,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import permission_classes
+import logging
+import os
+import mimetypes
+from io import BytesIO
+import requests
+import qrcode
 
+logger = logging.getLogger(__name__)
 from .browser_service import obtener_qr_screenshot
 from .forms import ConnectionForm
 from .models import WhatsappConnection, WebhookLog, Message
@@ -59,43 +66,42 @@ def tool_informacion_contacto():
 
 def ai_agent_logic(connection, user_text, sender_phone):
     """
-    Recibe el texto del usuario y la conexión (dispositivo).
-    Decide qué herramienta usar basándose en el 'Chatbot' asignado a la conexión.
+    Decide qué herramienta usar o delega a la IA Generativa (Ollama).
     """
     text = user_text.lower().strip()
 
-    # Obtenemos el "rol" o personalidad asignada a este número de WhatsApp
+    # Obtenemos el "rol" o personalidad asignada
     bot_slug = connection.chatbot.slug if connection.chatbot else "default"
 
-    # --- LÓGICA PARA BOT DE VENTAS ---
-    if bot_slug == 'bot_ventas':
-        if 'precio' in text or 'costo' in text or 'cuanto' in text:
-            # Simulación de extracción de entidades (Entity Extraction)
-            servicio_detectado = 'web'  # Por defecto
-            if 'api' in text:
-                servicio_detectado = 'api'
-            elif 'tienda' in text or 'ecommerce' in text:
-                servicio_detectado = 'ecommerce'
-            elif 'consultoria' in text:
-                servicio_detectado = 'consultoria'
+    # --- DEFINIR PERSONALIDAD DEL BOT ---
+    system_role = "Eres un asistente útil y amable de WhatsApp."
 
+    if bot_slug == 'bot_ventas':
+        system_role = (
+            "Eres un experto vendedor de 'DSI Soluciones'. "
+            "Vendes desarrollo web, APIs y consultoría. "
+            "Sé persuasivo, usa emojis y mantén las respuestas cortas (menos de 50 palabras). "
+            "Si preguntan precios exactos, intenta guiarlos, pero sé amable."
+        )
+        # Prioridad: Herramientas exactas
+        if 'precio' in text and ('web' in text or 'api' in text):
+            servicio_detectado = 'web' if 'web' in text else 'api'
             return tool_consultar_precio_servicio(servicio_detectado)
 
-        if 'hola' in text or 'buenas' in text:
-            return "👋 ¡Hola! Soy el Asistente de Ventas. ¿Te interesa desarrollo Web, APIs o Consultoría?"
-
-    # --- LÓGICA PARA BOT DE SOPORTE ---
     elif bot_slug == 'bot_soporte':
-        if 'error' in text or 'falla' in text or 'ayuda' in text:
+        system_role = (
+            "Eres un técnico de soporte nivel 1. "
+            "Tu objetivo es calmar al usuario y pedir detalles del error. "
+            "Sé empático, técnico pero claro. No inventes soluciones falsas."
+        )
+        # Prioridad: Herramientas exactas
+        if 'ticket' in text:
             return tool_generar_ticket_soporte(sender_phone, text)
 
-        if 'donde' in text or 'ubicacion' in text:
-            return tool_informacion_contacto()
-
-    # --- FALLBACK (RESPUESTA POR DEFECTO) ---
-    return f"🤖 [Agente {bot_slug}]: Recibí tu mensaje: '{user_text}', pero no estoy entrenado para responder eso aún."
-
-
+    # --- RESPUESTA GENERATIVA (OLLAMA) ---
+    # Si no cayó en un IF de herramienta específica, dejamos que Qwen conteste libremente.
+    logger.info(f"Delegando a Ollama ({OLLAMA_MODEL})...")
+    return call_ollama_ai(user_text, system_role)
 # ==============================================================================
 # 3. SERVICIOS AUXILIARES (INFRAESTRUCTURA)
 # ==============================================================================
@@ -473,3 +479,49 @@ def vincular_navegador(request):
         'qr_image': qr_image
     }
     return render(request, 'whatsapp_manager/vincular_browser.html', context)
+
+
+
+
+OLLAMA_API_URL = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434/api/generate")
+OLLAMA_MODEL = "qwen2.5:3b"
+
+
+def tool_informacion_contacto():
+    """Retorna información estática de contacto."""
+    return "📍 Nos ubicamos en Av. Tecnología 123. Horario: 9am - 6pm. Correo: contacto@dsi.com"
+
+
+# ==============================================================================
+# 2. CAPA DEL AGENTE (CEREBRO / AI BRAIN)
+# ==============================================================================
+
+def call_ollama_ai(user_text, system_prompt):
+    """
+    Envía el prompt a la instancia local de Ollama.
+    """
+    try:
+        payload = {
+            "model": OLLAMA_MODEL,
+            "prompt": user_text,
+            "system": system_prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.7,  # Creatividad (0.0 a 1.0)
+                "num_predict": 200  # Limitar longitud para WhatsApp
+            }
+        }
+
+        # Timeout corto (10s) para no bloquear el navegador si Ollama está lento
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=20)
+        response.raise_for_status()
+
+        result = response.json()
+        return result.get('response', '').strip()
+
+    except requests.exceptions.ConnectionError:
+        logger.error("No se pudo conectar con Ollama. ¿Está corriendo 'ollama serve'?")
+        return "⚠️ Error: Mi cerebro de IA está desconectado en este momento."
+    except Exception as e:
+        logger.error(f"Error en Ollama: {e}")
+        return "⚠️ Ocurrió un error procesando tu respuesta."
