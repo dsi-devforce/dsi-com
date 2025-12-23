@@ -27,48 +27,56 @@ def iniciar_navegador():
         except:
             driver_instance = None
 
+    print("Configurando opciones de Chrome...")
     chrome_options = Options()
 
-    # --- CONFIGURACIÓN PARA EVITAR DETECCIÓN ---
-    # 1. User Agent: Hacemos creer que es un Chrome normal en Windows
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    chrome_options.add_argument(f'user-agent={user_agent}')
+    # --- RUTAS DE INSTALACIÓN (Debian/Docker estándar) ---
+    chrome_options.binary_location = "/usr/bin/chromium"
 
-    # 2. Tamaño de ventana: Si es muy pequeño, WhatsApp pide "ampliar ventana" y no muestra QR
-    chrome_options.add_argument("--window-size=1920,1080")
-
-    # 3. Idioma (opcional pero recomendado)
-    chrome_options.add_argument("--lang=es-419")
-
-    # --- RESTO DE TU CONFIGURACIÓN DOCKER ---
-    chrome_options.add_argument("--headless=new")
+    # --- FLAGS OBLIGATORIOS PARA DOCKER ---
+    chrome_options.add_argument("--headless")  # Usamos el headless clásico (más estable)
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-software-rasterizer")
     chrome_options.add_argument("--remote-debugging-port=9222")
 
-    chrome_options.binary_location = "/usr/bin/chromium"
-    user_data_dir = os.path.join(settings.BASE_DIR, 'chrome_user_data')
+    # --- EVITAR DETECCIÓN ---
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+    chrome_options.add_argument(f'user-agent={user_agent}')
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    # --- PERFIL DE USUARIO ---
+    # Aseguramos que la carpeta se cree dentro de /app para evitar problemas de ruta
+    user_data_dir = os.path.join(os.getcwd(), 'chrome_user_data')
     chrome_options.add_argument(f"user-data-dir={user_data_dir}")
 
+    # Configuración del Driver
     service_path = "/usr/bin/chromedriver"
-    service = Service(service_path)
+
+    # Habilitar logs verbose para ver por qué falla si vuelve a pasar
+    service = Service(executable_path=service_path, log_path="/app/chromedriver.log", verbose=True)
 
     try:
+        print(f"Iniciando Chrome en {chrome_options.binary_location}...")
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        # TRUCO ADICIONAL: Evitar detección de webdriver mediante Script
+        # Script anti-detección
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+        print("Navegador iniciado correctamente. Yendo a WhatsApp...")
         driver.get("https://web.whatsapp.com")
+
         driver_instance = driver
         return driver
     except Exception as e:
-        print(f"Error fatal: {e}")
-        try:
-            driver.quit()
-        except:
-            pass
+        print(f"ERROR AL INICIAR CHROME: {e}")
+        # Si falla, lee el log generado
+        if os.path.exists("/app/chromedriver.log"):
+            print("--- CONTENIDO DEL LOG DE CHROMEDRIVER ---")
+            with open("/app/chromedriver.log", "r") as f:
+                print(f.read())
+            print("---------------------------------------")
         raise e
 
 def obtener_qr_screenshot():
