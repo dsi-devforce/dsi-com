@@ -153,66 +153,83 @@ def procesar_nuevos_mensajes(callback_inteligencia):
     wait = WebDriverWait(driver, 5)
 
     try:
-        # --- MEJORA DE SELECTORES ---
-        # Buscamos en el panel lateral ('pane-side') cualquier icono que indique mensajes no leídos.
-        # WhatsApp usa aria-label="X unread messages" o "X mensajes no leídos".
+        # Imprimir título para saber si la sesión sigue viva
+        # print(f"DEBUG: Título actual: {driver.title}")
+
+        # --- ESTRATEGIA DE SELECTORES MÁS AMPLIA ---
+        # Buscamos cualquier elemento que parezca un contador de mensajes no leídos (círculo verde con número)
+        # El aria-label suele ser la forma más segura
         xpath_busqueda = (
-            "//div[@id='pane-side']"
-            "//span[contains(@aria-label, 'unread') or contains(@aria-label, 'no leído') or contains(@aria-label, 'mensaje')]"
-            "/ancestor::div[@role='listitem']"  # Subimos al contenedor del chat
+            "//span[contains(@aria-label, 'unread') or "
+            "contains(@aria-label, 'no leído') or "
+            "contains(@aria-label, 'mensaje')]"
         )
 
-        chats_no_leidos = driver.find_elements(By.XPATH, xpath_busqueda)
+        # También buscamos por la clase del icono verde (a veces cambia, pero suele tener un color específico)
+        # Esto es un fallback
 
-        # Filtramos falsos positivos (a veces el buscador trae cosas que no son chats)
-        chats_reales = [c for c in chats_no_leidos if c.is_displayed()]
+        elementos_indicadores = driver.find_elements(By.XPATH, xpath_busqueda)
+
+        # Filtramos solo los visibles
+        chats_reales = []
+        for elem in elementos_indicadores:
+            if elem.is_displayed():
+                # Subimos 5 niveles para encontrar el contenedor clickeable del chat
+                # (span -> div -> div -> div -> div -> div[role=button])
+                try:
+                    padre = elem.find_element(By.XPATH, "./ancestor::div[@role='listitem']")
+                    chats_reales.append(padre)
+                except:
+                    continue
 
         if not chats_reales:
-            # logger.info("Escaneando... (Sin mensajes nuevos)") # Comentar para no saturar logs
             return False
 
-        logger.info(f"✅ ¡BINGO! Encontrados {len(chats_reales)} chats con mensajes nuevos.")
+        print(f"\n✅ ¡BINGO! Encontrados {len(chats_reales)} chats con mensajes nuevos.")
 
         for chat in chats_reales:
             try:
                 # A. Abrir el chat
                 chat.click()
-                time.sleep(1)  # Esperar a que cargue
+                time.sleep(2)  # Damos tiempo a que cargue el panel derecho
 
-                # B. Identificar contacto (Intentamos varios selectores por si acaso)
+                # B. Identificar contacto (Header del chat abierto)
+                # Buscamos el texto en el encabezado principal
                 try:
-                    nombre_contacto = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                    header = driver.find_element(By.TAG_NAME, "header")
+                    nombre_contacto = header.find_element(By.XPATH, ".//span[@dir='auto']").text
                 except:
                     nombre_contacto = "Desconocido"
 
-                # C. Leer último mensaje (Buscamos mensajes entrantes 'message-in')
-                try:
-                    mensajes = driver.find_elements(By.XPATH, '//div[contains(@class, "message-in")]//span[@dir="ltr"]')
-                    if mensajes:
-                        ultimo_mensaje = mensajes[-1].text
-                    else:
-                        ultimo_mensaje = "(Imagen o Audio)"
-                except:
-                    ultimo_mensaje = "Error leyendo texto"
+                # C. Leer mensajes
+                # Buscamos todos los contenedores de mensajes
+                mensajes = driver.find_elements(By.CLASS_NAME, "message-in")
 
-                logger.info(f"📩 Mensaje recibido de {nombre_contacto}: {ultimo_mensaje}")
+                if mensajes:
+                    # Dentro del último mensaje, buscamos el texto
+                    ultimo_bloque = mensajes[-1]
+                    try:
+                        texto_msg = ultimo_bloque.find_element(By.XPATH, ".//span[@dir='ltr']").text
+                    except:
+                        texto_msg = "[Multimedia/Sticker]"
+                else:
+                    texto_msg = "[No se pudo leer texto]"
 
-                # D. PROCESAR RESPUESTA (Callback)
-                respuesta = callback_inteligencia(ultimo_mensaje, nombre_contacto)
+                # D. Callback
+                respuesta = callback_inteligencia(texto_msg, nombre_contacto)
 
                 if respuesta:
                     enviar_mensaje_browser(nombre_contacto, respuesta)
-                    logger.info(f"📤 Respuesta enviada a {nombre_contacto}: {respuesta}")
 
-                # E. Pequeña pausa para no ir muy rápido
-                time.sleep(1)
+                # E. Mover el foco para que no siga contando como no leído inmediatamente
+                # (Hacemos click en el header o input para asegurar)
 
             except Exception as e:
-                logger.error(f"Error procesando chat individual: {e}")
+                print(f"Error procesando chat: {e}")
                 continue
 
         return True
 
     except Exception as e:
-        # logger.error(f"Error ciclo de escaneo: {e}")
+        # print(f"Error ciclo: {e}")
         return False

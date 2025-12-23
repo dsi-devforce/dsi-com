@@ -6,6 +6,7 @@ services:
     #command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app
+      - ./chrome_data:/app/chrome_user_data
     ports:
       - "8017:8000"
     depends_on:
