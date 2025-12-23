@@ -16,67 +16,56 @@ driver_instance = None
 def iniciar_navegador():
     global driver_instance
 
-    # 1. Verificar si ya existe una instancia activa
     if driver_instance is not None:
         try:
-            # Hacemos una llamada ligera para ver si el proceso sigue vivo
             driver_instance.title
             return driver_instance
-        except Exception:
-            # Si falla, asumimos que se cerró/crasheó y reiniciamos variable
-            print("El navegador anterior se cerró inesperadamente. Reiniciando...")
+        except:
             driver_instance = None
 
-    # 2. Configurar Opciones de Chrome para Docker
     chrome_options = Options()
 
-    # --- BANDERAS CRÍTICAS PARA DOCKER ---
-    chrome_options.add_argument("--headless=new")  # Ejecuta sin interfaz gráfica (Nueva sintaxis)
-    chrome_options.add_argument("--no-sandbox")  # Necesario para ejecutar como root
-    chrome_options.add_argument("--disable-dev-shm-usage")  # Evita errores de memoria compartida
+    # --- CONFIGURACIÓN PARA EVITAR DETECCIÓN ---
+    # 1. User Agent: Hacemos creer que es un Chrome normal en Windows
+    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    chrome_options.add_argument(f'user-agent={user_agent}')
+
+    # 2. Tamaño de ventana: Si es muy pequeño, WhatsApp pide "ampliar ventana" y no muestra QR
+    chrome_options.add_argument("--window-size=1920,1080")
+
+    # 3. Idioma (opcional pero recomendado)
+    chrome_options.add_argument("--lang=es-419")
+
+    # --- RESTO DE TU CONFIGURACIÓN DOCKER ---
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--remote-debugging-port=9222")  # Ayuda a la estabilidad
+    chrome_options.add_argument("--remote-debugging-port=9222")
 
-    # --- RUTA DEL BINARIO DEL NAVEGADOR ---
-    # Esto es vital porque en Docker instalamos 'chromium', no 'google-chrome'
     chrome_options.binary_location = "/usr/bin/chromium"
-
-    # --- PERSISTENCIA DE SESIÓN ---
-    # Usamos una ruta absoluta dentro del contenedor
     user_data_dir = os.path.join(settings.BASE_DIR, 'chrome_user_data')
     chrome_options.add_argument(f"user-data-dir={user_data_dir}")
 
-    # 3. Configurar el Servicio (Driver)
-    # Usamos la ruta del driver instalado por sistema (apt-get install chromium-driver)
-    # Esto evita el error de versión o descarga fallida de webdriver_manager
     service_path = "/usr/bin/chromedriver"
-
-    if not os.path.exists(service_path):
-        raise FileNotFoundError(
-            f"No se encontró el driver en {service_path}. Asegúrate de haber instalado 'chromium-driver' en tu Dockerfile.")
-
     service = Service(service_path)
 
     try:
-        print("Iniciando driver de Chrome...")
         driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        # Cargar WhatsApp Web
-        print("Cargando web.whatsapp.com...")
-        driver.get("https://web.whatsapp.com")
+        # TRUCO ADICIONAL: Evitar detección de webdriver mediante Script
+        driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
+        driver.get("https://web.whatsapp.com")
         driver_instance = driver
         return driver
-
     except Exception as e:
-        print(f"Error fatal al iniciar Selenium: {e}")
-        # Intentar cerrar si quedó algo colgado
+        print(f"Error fatal: {e}")
         try:
             driver.quit()
         except:
             pass
         raise e
-
 
 def obtener_qr_screenshot():
     """
