@@ -15,7 +15,7 @@ from django.views.decorators.http import require_http_methods
 from rest_framework.permissions import AllowAny
 from rest_framework.decorators import permission_classes
 from .forms import ConnectionForm
-from .models import WhatsappConnection,WebhookLog
+from .models import WhatsappConnection, WebhookLog, Message
 
 logger = logging.getLogger(__name__)
 
@@ -94,14 +94,26 @@ def process_message(connection, message_data):
     """
     sender_phone = message_data.get('from')
     msg_type = message_data.get('type')
+    msg_id = message_data.get('id')
 
     reply_payload = None
 
     # --- 1. PROCESAMIENTO DE TEXTO ---
     if msg_type == 'text':
-        text_body = message_data['text']['body'].strip().lower()
-        response_text = ""
+        text_body = message_data['text']['body']  # Quitamos strip() aquí para guardar original, lo hacemos después
 
+        # GUARDAR MENSAJE ENTRANTE (TEXTO)
+        Message.objects.create(
+            connection=connection,
+            wa_id=msg_id,
+            phone_number=sender_phone,
+            body=text_body,
+            msg_type='text',
+            direction='inbound'
+        )
+
+        text_body = text_body.strip().lower()
+        response_text = ""
         # Lógica basada en el 'slug' del Chatbot asignado
         chatbot_slug = connection.chatbot.slug if connection.chatbot else None
 
@@ -140,6 +152,15 @@ def process_message(connection, message_data):
         # Descargar archivo
         saved_path = handle_received_media(connection, media_id, mime_type)
 
+        Message.objects.create(
+            connection=connection,
+            wa_id=msg_id,
+            phone_number=sender_phone,
+            body=f"Archivo recibido: {msg_type}",
+            media_file=saved_path,
+            msg_type=msg_type,
+            direction='inbound'
+        )
         if saved_path:
             response_text = f"✅ He recibido tu archivo ({msg_type}) correctamente."
         else:
@@ -157,6 +178,14 @@ def process_message(connection, message_data):
         send_whatsapp_message(connection, reply_payload)
 
 
+        # GUARDAR RESPUESTA DEL BOT (SALIENTE)
+        if reply_payload['type'] == 'text':
+            Message.objects.create(
+                connection=connection,
+                phone_number=sender_phone,
+                body=reply_payload['text']['body'],
+                direction='outbound'
+            )
 # --- VISTAS PRINCIPALES ---
 
 @permission_classes([AllowAny])
@@ -319,23 +348,33 @@ def chat_interface(request, connection_id):
     """
     connection = get_object_or_404(WhatsappConnection, pk=connection_id)
 
-    # NOTA: Aquí deberías obtener los mensajes reales de tu base de datos.
-    # Como no tengo acceso a tu models.py, simularé la estructura de datos
-    # que el template espera. Debes reemplazar esto con una query real.
-    # Ejemplo: messages_list = Message.objects.filter(connection=connection).order_by('timestamp')
+    # 1. Obtener lista de conversaciones (agrupando por teléfono)
+    # Hacemos una agrupación manual simple para obtener el último mensaje de cada teléfono
+    all_messages = connection.messages.all().order_by('-timestamp')
+    contacts = {}
 
-    # MOCK DATA (Para demostración)
-    # Debes agrupar los mensajes por número de teléfono (contactos)
-    conversations = [
-        {'phone': '5215555555555', 'last_msg': 'Hola, precio?', 'timestamp': '10:00'},
-        {'phone': '34666666666', 'last_msg': 'Gracias', 'timestamp': '09:30'},
-    ]
+    for msg in all_messages:
+        if msg.phone_number not in contacts:
+            contacts[msg.phone_number] = {
+                'phone': msg.phone_number,
+                'last_msg': msg.body or f"[{msg.msg_type}]",
+                'timestamp': msg.timestamp
+            }
+
+    conversations = list(contacts.values())
+
+    # 2. Si se seleccionó un teléfono, cargar sus mensajes
+    active_phone = request.GET.get('phone')
+    active_messages = []
+
+    if active_phone:
+        active_messages = connection.messages.filter(phone_number=active_phone).order_by('timestamp')
 
     context = {
         'connection': connection,
         'conversations': conversations,
-        # Si seleccionas un chat específico:
-        'active_phone': request.GET.get('phone'),
+        'active_phone': active_phone,
+        'active_messages': active_messages,  # Asegúrate de usar esta variable en tu template chat.html
     }
     return render(request, 'whatsapp_manager/chat.html', context)
 
@@ -365,7 +404,13 @@ def send_message_ui(request, connection_id):
 
         # Usar tu función existente para enviar
         send_whatsapp_message(connection, payload)
-
+        # GUARDAR MENSAJE MANUAL (SALIENTE)
+        Message.objects.create(
+            connection=connection,
+            phone_number=phone_number,
+            body=message_body,
+            direction='outbound'
+        )
         # AQUÍ DEBERÍAS GUARDAR EL MENSAJE SALIENTE EN TU DB (MODELO MESSAGE)
         # Message.objects.create(..., direction='outbound', body=message_body)
 

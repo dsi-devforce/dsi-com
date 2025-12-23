@@ -42,4 +42,15 @@ class WebhookLog(models.Model):
         return f"Log {self.id} - {self.created_at}"
 
 
+class Message(models.Model):
+    connection = models.ForeignKey(WhatsappConnection, on_delete=models.CASCADE, related_name='messages')
+    wa_id = models.CharField(max_length=100, null=True, blank=True)
+    phone_number = models.CharField(max_length=20)  # El número del cliente
+    body = models.TextField(blank=True)
+    media_file = models.CharField(max_length=255, null=True, blank=True)  # Ruta si es archivo
+    msg_type = models.CharField(max_length=20, default='text')
+    direction = models.CharField(max_length=10, choices=[('inbound', 'Entrante'), ('outbound', 'Saliente')])
+    timestamp = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ['timestamp']
