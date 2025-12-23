@@ -1,76 +1,67 @@
 import time
+import os
 from django.core.management.base import BaseCommand
-from whatsapp_manager.browser_service import procesar_nuevos_mensajes, iniciar_navegador
-from whatsapp_manager.views import ai_agent_logic
-# Necesitamos una conexión "dummy" para pasarle a ai_agent_logic o adaptarla
-from whatsapp_manager.models import WhatsappConnection
-
-import time
-from django.core.management.base import BaseCommand
-from whatsapp_manager.browser_service import procesar_nuevos_mensajes, iniciar_navegador
-# Importamos la lógica del cerebro que creamos en views.py
-from whatsapp_manager.views import ai_agent_logic
-# Importamos el modelo para obtener la configuración del bot (Ventas/Soporte)
-from whatsapp_manager.models import WhatsappConnection
+from django.conf import settings
+from selenium.webdriver.common.by import By
+from whatsapp_manager.browser_service import iniciar_navegador, enviar_mensaje_browser
 
 
 class Command(BaseCommand):
-    help = 'Ejecuta el bot de WhatsApp conectado a Ollama con Logs en vivo'
+    help = 'Modo Diagnóstico: Verifica qué ve el bot realmente'
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('--- 🤖 INICIANDO BOT CON IA (OLLAMA) ---'))
+        self.stdout.write(self.style.WARNING('--- INICIANDO MODO DIAGNÓSTICO ---'))
 
-        # 1. Obtener una conexión de referencia
-        # Necesitamos esto porque ai_agent_logic requiere un objeto 'connection'
-        # para saber si actuar como Bot de Ventas o Soporte.
-        conexion_activa = WhatsappConnection.objects.filter(is_active=True).first()
+        driver = iniciar_navegador()
+        time.sleep(5)  # Esperar carga inicial
 
-        if not conexion_activa:
-            self.stdout.write(self.style.WARNING("⚠️ No hay conexiones en BD. Se usará una configuración genérica."))
-            # Creamos un objeto dummy en memoria si no hay nada en BD para que no falle
-            conexion_activa = WhatsappConnection(name="Dummy", display_phone_number="000")
+        # 1. DIAGNÓSTICO DE SESIÓN
+        titulo = driver.title
+        self.stdout.write(f"1. Título de la página: '{titulo}'")
 
-        self.stdout.write(
-            f"🧠 Cerebro configurado para: {conexion_activa.chatbot if conexion_activa.chatbot else 'Default'}")
+        if "WhatsApp" not in titulo:
+            self.stdout.write(self.style.ERROR("❌ NO parece estar en WhatsApp Web. Revisa la URL."))
 
-        # 2. Iniciar Selenium
-        iniciar_navegador()
-
-        # 3. Función Wrapper para Loguear la Interacción
-        def puente_con_logs(texto_usuario, nombre_remitente):
-            # A) Imprimir lo que llega
-            self.stdout.write(self.style.MIGRATE_HEADING(f"\n📨 MENSAJE RECIBIDO de {nombre_remitente}:"))
-            self.stdout.write(f"   \"{texto_usuario}\"")
-            self.stdout.write("   Thinking... 🤔")
-
-            try:
-                # B) Llamar al Cerebro (Views.py -> Ollama/Tools)
-                respuesta_ia = ai_agent_logic(conexion_activa, texto_usuario, nombre_remitente)
-
-                # C) Imprimir lo que sale
-                self.stdout.write(self.style.SUCCESS(f"🤖 RESPUESTA GENERADA:"))
-                self.stdout.write(f"   \"{respuesta_ia}\"")
-                self.stdout.write("-" * 40)
-
-                return respuesta_ia
-
-            except Exception as e:
-                self.stdout.write(self.style.ERROR(f"❌ Error en el cerebro de IA: {e}"))
-                return "Lo siento, tuve un error interno procesando tu mensaje."
-
-        # 4. Bucle Infinito
+        # 2. CAPTURA DE PANTALLA (DEBUG VISUAL)
         try:
-            while True:
-                # Feedback visual minimalista para saber que sigue vivo
-                self.stdout.write(".", ending='')
-                self.stdout.flush()
-
-                # Ejecutar escaneo
-                procesar_nuevos_mensajes(puente_con_logs)
-
-                time.sleep(2)  # Espera 2 segundos
-
-        except KeyboardInterrupt:
-            self.stdout.write(self.style.SUCCESS('\n\n🛑 Bot detenido manualmente.'))
+            ruta_img = os.path.join(settings.BASE_DIR, 'debug_view.png')
+            driver.save_screenshot(ruta_img)
+            self.stdout.write(self.style.SUCCESS(f"📸 Captura guardada en: {ruta_img}"))
+            self.stdout.write("   (Descarga esa imagen para ver si pide QR o si ya estás dentro)")
         except Exception as e:
-            self.stdout.write(self.style.ERROR(f'\n\n❌ Error fatal en el loop: {e}'))
+            self.stdout.write(f"Error guardando imagen: {e}")
+
+        # 3. PRUEBA DE SELECTORES (Busca panel lateral)
+        try:
+            panel_lateral = driver.find_element(By.ID, "pane-side")
+            self.stdout.write(self.style.SUCCESS("✅ Panel lateral encontrado (Sesión iniciada correctamente)"))
+
+            # Imprimir los primeros 200 caracteres de texto que ve en el panel
+            texto_visible = panel_lateral.text[:200].replace('\n', ' | ')
+            self.stdout.write(f"👀 Texto visible en lista chats: {texto_visible}...")
+
+            # 4. PRUEBA DE ESCRITURA FORZADA
+            # Vamos a intentar hacer clic en el PRIMER chat de la lista (sea cual sea) y escribir.
+            self.stdout.write("\nintentando abrir el primer chat visible...")
+
+            chats = panel_lateral.find_elements(By.XPATH, "./div/div/div/div")
+            if chats:
+                primer_chat = chats[0]
+                primer_chat.click()
+                time.sleep(2)
+
+                self.stdout.write("💬 Intentando escribir 'Hola prueba sistema'...")
+                exito = enviar_mensaje_browser("Test", "Hola prueba sistema - Diagnóstico")
+
+                if exito:
+                    self.stdout.write(self.style.SUCCESS("✅ ¡ESCRITURA EXITOSA! El bot puede escribir."))
+                else:
+                    self.stdout.write(self.style.ERROR("❌ Falló la escritura."))
+            else:
+                self.stdout.write(self.style.ERROR("❌ No encontré ningún chat en la lista."))
+
+        except Exception as e:
+            self.stdout.write(self.style.ERROR(f"❌ Error crítico buscando elementos: {e}"))
+            self.stdout.write("   Posiblemente sigues en la pantalla de código QR.")
+
+        self.stdout.write(self.style.WARNING('\n--- FIN DEL DIAGNÓSTICO ---'))

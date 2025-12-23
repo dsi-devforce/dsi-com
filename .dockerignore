@@ -54,3 +54,6 @@ Thumbs.db
 
 *.pyc
 chrome_user_data
+chrome_data
+__pycache__
+.git
