@@ -96,11 +96,16 @@ def process_message(connection, message_data):
     msg_type = message_data.get('type')
     msg_id = message_data.get('id')
 
+    # 1. EVITAR DUPLICADOS
+    if Message.objects.filter(wa_id=msg_id).exists():
+        logger.info(f"Mensaje duplicado ignorado: {msg_id}")
+        return
+
     reply_payload = None
 
-    # --- 1. PROCESAMIENTO DE TEXTO ---
+    # --- 2. PROCESAMIENTO DE TEXTO ---
     if msg_type == 'text':
-        text_body = message_data['text']['body']  # Quitamos strip() aquí para guardar original, lo hacemos después
+        text_body = message_data['text']['body'] # Original
 
         # GUARDAR MENSAJE ENTRANTE (TEXTO)
         Message.objects.create(
@@ -112,21 +117,22 @@ def process_message(connection, message_data):
             direction='inbound'
         )
 
-        text_body = text_body.strip().lower()
+        text_body_lower = text_body.strip().lower() # Para lógica
         response_text = ""
+
         # Lógica basada en el 'slug' del Chatbot asignado
         chatbot_slug = connection.chatbot.slug if connection.chatbot else None
 
         if chatbot_slug == 'bot_ventas':
-            if 'precio' in text_body or 'costo' in text_body:
+            if 'precio' in text_body_lower or 'costo' in text_body_lower:
                 response_text = "💰 Nuestros servicios empiezan desde $100 USD. ¿Te gustaría ver el catálogo?"
-            elif 'hola' in text_body:
+            elif 'hola' in text_body_lower:
                 response_text = "¡Hola! Soy el asistente de Ventas. Escribe 'precio' para saber nuestros costos."
             else:
                 response_text = "Soy el bot de ventas. Actualmente solo respondo a consultas de precios."
 
         elif chatbot_slug == 'bot_soporte':
-            if 'ayuda' in text_body or 'error' in text_body:
+            if 'ayuda' in text_body_lower or 'error' in text_body_lower:
                 response_text = "⚠️ Hemos registrado tu incidencia. Un técnico la revisará pronto."
             else:
                 response_text = "Soporte Técnico: Por favor describe tu error o escribe 'ayuda'."
@@ -143,7 +149,7 @@ def process_message(connection, message_data):
             "text": {"body": response_text}
         }
 
-    # --- 2. PROCESAMIENTO DE MULTIMEDIA ---
+    # --- 3. PROCESAMIENTO DE MULTIMEDIA ---
     elif msg_type in ['image', 'document', 'audio', 'video', 'sticker']:
         media_node = message_data[msg_type]
         media_id = media_node.get('id')
@@ -152,6 +158,7 @@ def process_message(connection, message_data):
         # Descargar archivo
         saved_path = handle_received_media(connection, media_id, mime_type)
 
+        # GUARDAR MENSAJE ENTRANTE (MULTIMEDIA)
         Message.objects.create(
             connection=connection,
             wa_id=msg_id,
@@ -161,6 +168,7 @@ def process_message(connection, message_data):
             msg_type=msg_type,
             direction='inbound'
         )
+
         if saved_path:
             response_text = f"✅ He recibido tu archivo ({msg_type}) correctamente."
         else:
@@ -177,7 +185,6 @@ def process_message(connection, message_data):
     if reply_payload:
         send_whatsapp_message(connection, reply_payload)
 
-
         # GUARDAR RESPUESTA DEL BOT (SALIENTE)
         if reply_payload['type'] == 'text':
             Message.objects.create(
@@ -186,8 +193,10 @@ def process_message(connection, message_data):
                 body=reply_payload['text']['body'],
                 direction='outbound'
             )
-# --- VISTAS PRINCIPALES ---
 
+@permission_classes([AllowAny])
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
 @permission_classes([AllowAny])
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
@@ -200,8 +209,6 @@ def webhook(request):
     """
     # 1. VERIFICACIÓN (GET)
     if request.method == "GET":
-        # ... existing code ...
-        # (Mantener lógica de GET igual)
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
@@ -220,18 +227,14 @@ def webhook(request):
         try:
             body = json.loads(request.body.decode('utf-8'))
 
-            # --- NUEVO: GUARDAR LOG ---
-            # Guardamos exactamente lo que llega para inspeccionarlo luego
+            # --- GUARDAR LOG ---
             try:
                 WebhookLog.objects.create(payload=body)
             except Exception as log_error:
                 logger.error(f"No se pudo guardar el log: {log_error}")
-            # --------------------------
 
             # Verificar estructura básica de WhatsApp
             if 'object' in body and body['object'] == 'whatsapp_business_account':
-                # ... existing code ...
-                # (Mantener el resto de la lógica igual)
                 entries = body.get('entry', [])
 
                 for entry in entries:
@@ -248,19 +251,26 @@ def webhook(request):
                             ).first()
 
                             if connection:
+                                # A. PROCESAR MENSAJES (Texto, Imagen, etc.)
                                 messages_list = value.get('messages', [])
                                 for message in messages_list:
                                     process_message(connection, message)
 
+                                # B. PROCESAR ESTADOS (Sent, Delivered, Read)
+                                statuses_list = value.get('statuses', [])
+                                for status in statuses_list:
+                                    status_id = status.get('id')
+                                    status_val = status.get('status')
+                                    # Aquí podrías actualizar el estado en BD si quisieras
+                                    logger.info(f"Estado recibido: ID={status_id}, Status={status_val}")
+
             return JsonResponse({'status': 'ok'}, status=200)
-        # ... existing code ...
+
         except json.JSONDecodeError:
             return JsonResponse({'status': 'error', 'message': 'JSON inválido'}, status=400)
         except Exception as e:
             logger.error(f"Excepción en webhook: {str(e)}")
             return JsonResponse({'status': 'error', 'message': str(e)}, status=200)
-
-
 # --- VISTAS DE INSPECCIÓN (NUEVO) ---
 
 def webhook_inspector(request):
