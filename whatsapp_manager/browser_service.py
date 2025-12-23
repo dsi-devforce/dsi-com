@@ -145,3 +145,110 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
 
 # El resto de tu función procesar_nuevos_mensajes se ve bien
 # Solo asegúrate de llamar a las funciones corregidas arriba.
+
+def procesar_nuevos_mensajes(callback_inteligencia):
+    """
+    Escanea la lista de chats buscando indicadores de 'No leído'.
+    Retorna True si encontró algo y lo procesó, False si no.
+    """
+    try:
+        driver = iniciar_navegador()
+
+        # Verificación rápida de sanidad: ¿Seguimos en WhatsApp?
+        if "WhatsApp" not in driver.title:
+            print("⚠️ El navegador perdió el foco de WhatsApp. Intentando recuperar...")
+            driver.get("https://web.whatsapp.com")
+            time.sleep(5)
+
+        # Buscamos el panel lateral (donde están los chats)
+        try:
+            wait = WebDriverWait(driver, 5)
+            panel_lateral = wait.until(EC.presence_of_element_located((By.ID, "pane-side")))
+        except:
+            # Si no hay panel lateral, quizá se cerró la sesión o está cargando
+            return False
+
+        # --- ESTRATEGIA DE BÚSQUEDA ---
+        # Buscamos iconos de mensajes no leídos.
+        # WhatsApp usa aria-label="X unread message" o "X mensajes no leídos"
+        xpath_unread = (
+            './/span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
+            '/ancestor::div[@role="listitem"]'
+        )
+
+        chats_activos = panel_lateral.find_elements(By.XPATH, xpath_unread)
+
+        if not chats_activos:
+            return False
+
+        print(f"\n🔔 Actividad detectada: {len(chats_activos)} chats pendientes.")
+
+        # Procesamos solo el primer chat encontrado por ciclo para mantener estabilidad
+        # El bucle externo del comando se encargará de volver a llamar a esta función para los siguientes.
+        chat = chats_activos[0]
+
+        try:
+            # A. Entrar al chat
+            chat.click()
+            time.sleep(2)  # Espera carga del historial de mensajes
+
+            # B. Identificar quién escribe (Nombre del contacto)
+            try:
+                # Buscamos en el header del chat activo
+                header_xpath = '//header//span[@dir="auto"]'
+                nombre_contacto = driver.find_element(By.XPATH, header_xpath).text
+            except:
+                nombre_contacto = "Desconocido"
+
+            # C. Leer lo último que nos dijeron
+            try:
+                # Buscamos burbujas de mensajes entrantes ('message-in')
+                mensajes = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+
+                if mensajes:
+                    ultimo_burbuja = mensajes[-1]
+
+                    # Intentamos extraer el texto limpio.
+                    # A veces el texto está dentro de un span con clase 'selectable-text'
+                    try:
+                        texto_msg = ultimo_burbuja.find_element(By.CSS_SELECTOR, "span.selectable-text span").text
+                    except:
+                        # Si falla, tomamos todo el texto de la burbuja y limpiamos la hora
+                        texto_bruto = ultimo_burbuja.text
+                        lines = texto_bruto.split('\n')
+                        # Normalmente la última línea es la hora, tomamos lo anterior
+                        texto_msg = "\n".join(lines[:-1]) if len(lines) > 1 else lines[0]
+                else:
+                    texto_msg = ""
+
+            except Exception as e:
+                print(f"Error leyendo burbuja: {e}")
+                texto_msg = ""
+
+            # D. Procesar respuesta
+            # Solo procesamos si hay texto válido (evitamos responder a audios vacíos por ahora)
+            if texto_msg and len(texto_msg.strip()) > 0:
+                print(f"📩 {nombre_contacto} dice: {texto_msg}")
+
+                # Llamar al cerebro (tu función callback_ia)
+                respuesta = callback_inteligencia(texto_msg, nombre_contacto)
+
+                if respuesta:
+                    print(f"🤖 Respondiendo: {respuesta[:30]}...")
+                    enviar_mensaje_browser(nombre_contacto, respuesta)
+
+            # E. Salir del chat (Opcional pero recomendado para resetear estado visual)
+            # Presionamos ESC para deseleccionar mensajes o cerrar menús
+            webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+
+            # Pequeña pausa anti-ban
+            time.sleep(1)
+            return True
+
+        except Exception as e:
+            print(f"⚠️ Error procesando chat individual: {e}")
+            return False
+
+    except Exception as e:
+        # print(f"Error ciclo escaneo: {e}") # Descomentar para debug profundo
+        return False
