@@ -89,22 +89,26 @@
             </div>
 
             <div class="messages-area" id="messagesArea">
-                <!-- NOTA: Debes iterar sobre los mensajes REALES pasados en el contexto -->
-                <!-- Ejemplo: -->
-                <!--
-                {% for msg in messages_history %}
-                    <div class="message {% if msg.is_outgoing %}outgoing{% else %}incoming{% endif %}">
-                        {{ msg.text_body }}
-                        <span class="msg-time">{{ msg.timestamp|date:"H:i" }}</span>
-                    </div>
-                {% endfor %}
-                -->
+                    {% for msg in active_messages %}
+                        <div class="message {% if msg.direction == 'outbound' %}outgoing{% else %}incoming{% endif %}">
 
-                <!-- MOCK VISUAL -->
-                <div class="message incoming">Hola, ¿cuál es el precio? <span class="msg-time">10:00</span></div>
-                <div class="message outgoing">Hola, nuestros precios inician en $100. <span class="msg-time">10:01</span></div>
-            </div>
+                            {% if msg.msg_type == 'text' %}
+                                {{ msg.body }}
+                            {% else %}
+                                <i>📎 [Archivo: {{ msg.msg_type }}]</i><br>
+                                {% if msg.media_file %}
+                                    <small><a href="/media/{{ msg.media_file }}" target="_blank" style="text-decoration: none; color: #007bff;">Ver Archivo</a></small>
+                                {% endif %}
+                            {% endif %}
 
+                            <span class="msg-time">{{ msg.timestamp|date:"H:i" }}</span>
+                        </div>
+                    {% empty %}
+                        <div style="text-align: center; color: #888; margin-top: 20px;">
+                            <small>No hay mensajes en esta conversación.</small>
+                        </div>
+                    {% endfor %}
+                </div>
             <div class="input-area">
                 <input type="text" class="input-box" id="msgInput" placeholder="Escribe un mensaje" autofocus onkeypress="handleEnter(event)">
                 <button class="btn-send" onclick="sendMessage()">➤</button>
