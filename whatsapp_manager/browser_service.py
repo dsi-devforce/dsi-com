@@ -38,11 +38,18 @@ def iniciar_navegador():
     # chrome_options.add_argument("--remote-debugging-port=9222")
 
     # ❌ COMENTA EL PERFIL TEMPORALMENTE (Para descartar corrupción)
-    # user_data_dir = "/app/chrome_user_data"
-    # chrome_options.add_argument(f"user-data-dir={user_data_dir}")
+    user_data_dir = "/app/chrome_user_data"
+    chrome_options.add_argument(f"user-data-dir={user_data_dir}")
 
     # User Agent
     user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    lock_file = os.path.join(user_data_dir, "SingletonLock")
+    if os.path.exists(lock_file):
+        try:
+            os.remove(lock_file)
+            print("🧹 SingletonLock eliminado.")
+        except:
+            pass
     chrome_options.add_argument(f'user-agent={user_agent}')
 
     # --- SERVICE CON LOGS ---
