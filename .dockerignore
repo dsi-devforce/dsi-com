@@ -53,3 +53,4 @@ htmlcov/
 Thumbs.db
 
 *.pyc
+chrome_user_data
