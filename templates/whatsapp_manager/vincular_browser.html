@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Vincular Navegador WhatsApp</title>
+    <meta http-equiv="refresh" content="10"> <!-- Auto-refrescar cada 10s para ver si cambió el estado -->
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #f0f2f5; }
+        .card { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); display: inline-block; }
+        img { border: 1px solid #ddd; margin: 20px 0; }
+        .status { font-weight: bold; padding: 10px; border-radius: 5px; margin-bottom: 20px; }
+        .status.YA_VINCULADO { background-color: #d1e7dd; color: #0f5132; }
+        .status.ESPERANDO_ESCANEO { background-color: #fff3cd; color: #664d03; }
+        .status.ERROR { background-color: #f8d7da; color: #842029; }
+    </style>
+</head>
+<body>
+
+    <div class="card">
+        <h2>🖥️ Instancia de Navegador</h2>
+
+        <div class="status {{ estado }}">
+            Estado: {{ estado }}
+        </div>
+
+        {% if estado == "YA_VINCULADO" %}
+            <p>✅ El navegador ya está conectado a una cuenta de WhatsApp.</p>
+            <p>El sistema ahora puede automatizar acciones.</p>
+        {% elif estado == "ESPERANDO_ESCANEO" and qr_image %}
+            <p>Escanea este código QR con tu aplicación de WhatsApp:</p>
+            <img src="data:image/png;base64,{{ qr_image }}" alt="QR Code WhatsApp Web" />
+            <p><small>La página se actualizará automáticamente...</small></p>
+        {% else %}
+            <p>Iniciando navegador, por favor espera...</p>
+        {% endif %}
+
+        <br>
+        <a href="{% url 'dashboard' %}">Volver al Dashboard</a>
+    </div>
+
+</body>
+</html>
