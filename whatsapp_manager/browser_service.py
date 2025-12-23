@@ -180,7 +180,25 @@ def procesar_nuevos_mensajes(callback_inteligencia):
         except:
             # Si no hay panel lateral, quizá se cerró la sesión o está cargando
             return False
+        try:
+            primer_chat = driver.find_element(By.XPATH, '//div[@role="listitem"]')
+            print(f"👀 Veo un chat: '{primer_chat.text[:20]}...'")
+            # Buscamos spans ocultos para ver si dice 'unread' o 'no leído'
+            spans = primer_chat.find_elements(By.TAG_NAME, "span")
+            for s in spans:
+                label = s.get_attribute("aria-label")
+                if label:
+                    print(f"   🏷️ Etiqueta encontrada: '{label}'")
+        except:
+            print("👀 No veo ningún chat en la lista (¿Lista vacía?)")
 
+            # --- ESTRATEGIA DE BÚSQUEDA (Asegúrate que esta línea sea así de amplia) ---
+        xpath_unread = (
+            './/span[contains(@aria-label, "unread") or '
+            'contains(@aria-label, "no leído") or '
+            'contains(@aria-label, "non lu")]'  # Agregamos francés por si acaso
+            '/ancestor::div[@role="listitem"]'
+        )
         # --- ESTRATEGIA DE BÚSQUEDA ---
         # Buscamos iconos de mensajes no leídos.
         # WhatsApp usa aria-label="X unread message" o "X mensajes no leídos"
