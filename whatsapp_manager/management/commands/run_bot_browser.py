@@ -32,21 +32,24 @@ class Command(BaseCommand):
             conexion_activa = WhatsappConnection(name="Default", display_phone_number="000")
 
         # 3. Callback interno para conectar con la IA
-        def callback_ia(texto, remitente):
-            if not texto: return None
+        #def callback_ia(texto, remitente):
+        #    if not texto: return None
 
-            self.stdout.write(f"🧠 Procesando mensaje de {remitente}...")
+        #    self.stdout.write(f"🧠 Procesando mensaje de {remitente}...")
 
-            if ai_agent_logic:
-                try:
-                    return ai_agent_logic(conexion_activa, texto, remitente)
-                except Exception as e:
-                    print(f"Error en IA Logic: {e}")
-                    return "Lo siento, tuve un error interno."
-            else:
+        #    if ai_agent_logic:
+        #        try:
+        #            return ai_agent_logic(conexion_activa, texto, remitente)
+        #        except Exception as e:
+        #            print(f"Error en IA Logic: {e}")
+        #            return "Lo siento, tuve un error interno."
+        #    else:
                 # Fallback si no pudimos importar views.py
-                return f"Echo: {texto}"
+        #        return f"Echo: {texto}"
 
+        def callback_ia(texto, remitente):
+            print(f"📥 MENSAJE RECIBIDO DE {remitente}: {texto}")
+            return f"🤖 Recibido: {texto}"
         # 4. Bucle infinito
         try:
             while True:
