@@ -16,7 +16,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.decorators import permission_classes
 from .forms import ConnectionForm
 from .models import WhatsappConnection, WebhookLog, Message
-
+from django.test import RequestFactory
 logger = logging.getLogger(__name__)
 
 # Configuración de la API de Meta
@@ -429,3 +429,74 @@ def send_message_ui(request, connection_id):
     except Exception as e:
         logger.error(f"Error enviando mensaje UI: {e}")
         return JsonResponse({'status': 'error', 'message': str(e)}, status=500)
+
+
+def webhook_simulator(request):
+    """
+    Herramienta para simular eventos de Webhook manualmente.
+    """
+    result = None
+    initial_json = json.dumps({
+        "object": "whatsapp_business_account",
+        "entry": [{
+            "changes": [{
+                "value": {
+                    "messaging_product": "whatsapp",
+                    "metadata": {
+                        "display_phone_number": "123456789",
+                        "phone_number_id": "TU_ID_AQUI"
+                    },
+                    "messages": [{
+                        "from": "5215555555555",
+                        "id": "wamid.HBgLM...",
+                        "timestamp": "1700000000",
+                        "type": "text",
+                        "text": {"body": "Hola, prueba desde simulador"}
+                    }]
+                }
+            }]
+        }]
+    }, indent=2)
+
+    if request.method == 'POST':
+        json_content = request.POST.get('json_payload')
+
+        try:
+            # 1. Validar que sea JSON válido
+            payload = json.loads(json_content)
+
+            # 2. Crear una petición POST simulada (Mock Request)
+            # Usamos RequestFactory para crear un request interno idéntico al real
+            factory = RequestFactory()
+            mock_request = factory.post(
+                '/whatsapp/webhook/',
+                data=payload,
+                content_type='application/json'
+            )
+
+            # Si usas validación de firma en webhook, aquí tendrías que simular el header
+            # o hacer que tu webhook ignore la firma si viene de localhost o similar.
+            # Por ahora asumiremos que en desarrollo no valida firma estricta o que este mock la pasa.
+
+            # 3. Llamar a la vista webhook real
+            response = webhook(mock_request)
+
+            if response.status_code == 200:
+                result = {'status': 'success',
+                          'message': '✅ Webhook procesado correctamente (Status 200). Revisa el chat.'}
+            else:
+                result = {'status': 'error',
+                          'message': f'❌ El webhook respondió con error: {response.status_code} - {response.content.decode()}'}
+
+        except json.JSONDecodeError:
+            result = {'status': 'error', 'message': '❌ El contenido no es un JSON válido.'}
+        except Exception as e:
+            result = {'status': 'error', 'message': f'❌ Error interno: {str(e)}'}
+
+        # Mantenemos el JSON que envió el usuario para que no tenga que pegarlo de nuevo si falló
+        initial_json = json_content
+
+    return render(request, 'whatsapp_manager/webhook_simulator.html', {
+        'initial_json': initial_json,
+        'result': result
+    })

@@ -10,4 +10,5 @@ urlpatterns = [
     path('chat/<int:connection_id>/send/', views.send_message_ui, name='send_message_ui'),
     path('inspector/', views.webhook_inspector, name='webhook_inspector'),
     path('inspector/api/', views.get_latest_logs, name='api_webhook_logs'),
+    path('simulator/', views.webhook_simulator, name='webhook_simulator'),
 ]
