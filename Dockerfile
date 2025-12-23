@@ -9,6 +9,11 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpq-dev \
+    chromium \
+    chromium-driver \
+    libnss3 \
+    libgconf-2-4 \
+    libxi6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar librerías de Python
