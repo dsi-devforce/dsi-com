@@ -148,62 +148,71 @@ def enviar_mensaje_browser(telefono, mensaje):
 def procesar_nuevos_mensajes(callback_inteligencia):
     """
     Escanea la lista de chats buscando indicadores de 'No leído'.
-    Si encuentra uno:
-      1. Hace clic en el chat.
-      2. Lee el último mensaje.
-      3. Llama a 'callback_inteligencia' para obtener la respuesta.
-      4. Escribe la respuesta.
     """
     driver = iniciar_navegador()
     wait = WebDriverWait(driver, 5)
 
     try:
-        # 1. Buscar chats con indicadores verdes (burbujas de mensajes no leídos)
-        # El aria-label suele contener "unread message" o similar
-        chats_no_leidos = driver.find_elements(By.XPATH,
-                                               '//span[@aria-label and contains(@aria-label, "unread")]/ancestor::div[@role="listitem"]')
+        # --- MEJORA DE SELECTORES ---
+        # Buscamos en el panel lateral ('pane-side') cualquier icono que indique mensajes no leídos.
+        # WhatsApp usa aria-label="X unread messages" o "X mensajes no leídos".
+        xpath_busqueda = (
+            "//div[@id='pane-side']"
+            "//span[contains(@aria-label, 'unread') or contains(@aria-label, 'no leído') or contains(@aria-label, 'mensaje')]"
+            "/ancestor::div[@role='listitem']"  # Subimos al contenedor del chat
+        )
 
-        if not chats_no_leidos:
-            return False  # No hay nada nuevo
+        chats_no_leidos = driver.find_elements(By.XPATH, xpath_busqueda)
 
-        logger.info(f"Encontrados {len(chats_no_leidos)} chats con mensajes nuevos.")
+        # Filtramos falsos positivos (a veces el buscador trae cosas que no son chats)
+        chats_reales = [c for c in chats_no_leidos if c.is_displayed()]
 
-        for chat in chats_no_leidos:
+        if not chats_reales:
+            # logger.info("Escaneando... (Sin mensajes nuevos)") # Comentar para no saturar logs
+            return False
+
+        logger.info(f"✅ ¡BINGO! Encontrados {len(chats_reales)} chats con mensajes nuevos.")
+
+        for chat in chats_reales:
             try:
                 # A. Abrir el chat
                 chat.click()
-                time.sleep(2)  # Esperar a que cargue la conversación
+                time.sleep(1)  # Esperar a que cargue
 
-                # B. Identificar quién nos escribe (Nombre del contacto en el header)
-                header_title = driver.find_element(By.XPATH, '//header//div[@role="button"]//span[@dir="auto"]')
-                nombre_contacto = header_title.text
+                # B. Identificar contacto (Intentamos varios selectores por si acaso)
+                try:
+                    nombre_contacto = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                except:
+                    nombre_contacto = "Desconocido"
 
-                # C. Leer el último mensaje recibido
-                # Buscamos todos los mensajes que sean "message-in" (entrantes)
-                mensajes_entrantes = driver.find_elements(By.XPATH,
-                                                          '//div[contains(@class, "message-in")]//span[@dir="ltr"]')
+                # C. Leer último mensaje (Buscamos mensajes entrantes 'message-in')
+                try:
+                    mensajes = driver.find_elements(By.XPATH, '//div[contains(@class, "message-in")]//span[@dir="ltr"]')
+                    if mensajes:
+                        ultimo_mensaje = mensajes[-1].text
+                    else:
+                        ultimo_mensaje = "(Imagen o Audio)"
+                except:
+                    ultimo_mensaje = "Error leyendo texto"
 
-                if mensajes_entrantes:
-                    ultimo_mensaje = mensajes_entrantes[-1].text
-                    logger.info(f"Mensaje de {nombre_contacto}: {ultimo_mensaje}")
+                logger.info(f"📩 Mensaje recibido de {nombre_contacto}: {ultimo_mensaje}")
 
-                    # D. PROCESAR CON TU IA (Callback)
-                    # Aquí llamamos a la lógica que ya tienes en views.py
-                    respuesta = callback_inteligencia(ultimo_mensaje, nombre_contacto)
+                # D. PROCESAR RESPUESTA (Callback)
+                respuesta = callback_inteligencia(ultimo_mensaje, nombre_contacto)
 
-                    if respuesta:
-                        # E. Responder
-                        enviar_mensaje_browser(nombre_contacto, respuesta)
-                        logger.info(f"Respuesta enviada a {nombre_contacto}")
+                if respuesta:
+                    enviar_mensaje_browser(nombre_contacto, respuesta)
+                    logger.info(f"📤 Respuesta enviada a {nombre_contacto}: {respuesta}")
 
-                # F. Volver al inicio o marcar como leído (simplemente pasando al siguiente loop)
+                # E. Pequeña pausa para no ir muy rápido
+                time.sleep(1)
 
             except Exception as e:
-                logger.error(f"Error procesando un chat específico: {e}")
+                logger.error(f"Error procesando chat individual: {e}")
                 continue
 
         return True
 
     except Exception as e:
-        # Es normal que falle si no encuentra elementos, no queremos llenar el log de errores
+        # logger.error(f"Error ciclo de escaneo: {e}")
         return False
