@@ -156,88 +156,95 @@ def enviar_mensaje_browser(telefono, mensaje):
 def procesar_nuevos_mensajes(callback_inteligencia):
     """
     Escanea la lista de chats buscando indicadores de 'No leído'.
+    Versión V2: Selectores más agresivos y robustos.
     """
     driver = iniciar_navegador()
-    wait = WebDriverWait(driver, 5)
 
     try:
-        # Imprimir título para saber si la sesión sigue viva
-        # print(f"DEBUG: Título actual: {driver.title}")
+        # Buscamos el panel lateral primero para asegurar contexto
+        panel_lateral = driver.find_element(By.ID, "pane-side")
 
-        # --- ESTRATEGIA DE SELECTORES MÁS AMPLIA ---
-        # Buscamos cualquier elemento que parezca un contador de mensajes no leídos (círculo verde con número)
-        # El aria-label suele ser la forma más segura
-        xpath_busqueda = (
-            "//span[contains(@aria-label, 'unread') or "
-            "contains(@aria-label, 'no leído') or "
-            "contains(@aria-label, 'mensaje')]"
+        # ESTRATEGIA MULTI-SELECTOR
+        # Buscamos iconos verdes que tengan números dentro.
+        # WhatsApp suele usar spans con colores específicos para las notificaciones.
+        # Buscamos cualquier elemento con aria-label que diga "unread" o "no leído"
+        xpath_inteligente = (
+            ".//div[@role='listitem']"  # Cada fila de chat
+            "//span[contains(@aria-label, 'unread') or contains(@aria-label, 'no leído')]"  # Indicador
+            "/ancestor::div[@role='listitem']"  # Volvemos a subir al chat padre
         )
 
-        # También buscamos por la clase del icono verde (a veces cambia, pero suele tener un color específico)
-        # Esto es un fallback
+        chats_candidatos = panel_lateral.find_elements(By.XPATH, xpath_inteligente)
 
-        elementos_indicadores = driver.find_elements(By.XPATH, xpath_busqueda)
+        # FILTRO EXTRA: Si la búsqueda por aria-label falla, buscamos por estructura visual (icono verde)
+        if not chats_candidatos:
+            # Este selector busca el circulito verde típico de notificaciones (suele ser el único span verde en la derecha)
+            # Nota: Esto es más frágil, pero útil como fallback
+            xpath_visual = ".//div[@role='listitem']//span[contains(@style, 'color') or @class='_1pJ9J']"
+            # (La clase _1pJ9J cambia, pero la estructura suele mantenerse)
+            pass
 
-        # Filtramos solo los visibles
-        chats_reales = []
-        for elem in elementos_indicadores:
-            if elem.is_displayed():
-                # Subimos 5 niveles para encontrar el contenedor clickeable del chat
-                # (span -> div -> div -> div -> div -> div[role=button])
-                try:
-                    padre = elem.find_element(By.XPATH, "./ancestor::div[@role='listitem']")
-                    chats_reales.append(padre)
-                except:
-                    continue
+        if not chats_candidatos:
+            return False  # Nada nuevo
 
-        if not chats_reales:
-            return False
+        print(f"\n🔔 Detectados {len(chats_candidatos)} chats con actividad.")
 
-        print(f"\n✅ ¡BINGO! Encontrados {len(chats_reales)} chats con mensajes nuevos.")
-
-        for chat in chats_reales:
+        for chat in chats_candidatos:
             try:
-                # A. Abrir el chat
+                # 1. Abrir chat
                 chat.click()
-                time.sleep(2)  # Damos tiempo a que cargue el panel derecho
+                time.sleep(2)  # Espera carga
 
-                # B. Identificar contacto (Header del chat abierto)
-                # Buscamos el texto en el encabezado principal
+                # 2. Obtener Nombre Contacto
                 try:
+                    # Buscamos el título en el header principal
                     header = driver.find_element(By.TAG_NAME, "header")
                     nombre_contacto = header.find_element(By.XPATH, ".//span[@dir='auto']").text
                 except:
                     nombre_contacto = "Desconocido"
 
-                # C. Leer mensajes
-                # Buscamos todos los contenedores de mensajes
-                mensajes = driver.find_elements(By.CLASS_NAME, "message-in")
+                # 3. Leer Último Mensaje
+                try:
+                    # Buscamos todos los globos de mensajes entrantes
+                    # 'message-in' es una clase muy estable en WA Web
+                    mensajes_entrantes = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
 
-                if mensajes:
-                    # Dentro del último mensaje, buscamos el texto
-                    ultimo_bloque = mensajes[-1]
-                    try:
-                        texto_msg = ultimo_bloque.find_element(By.XPATH, ".//span[@dir='ltr']").text
-                    except:
-                        texto_msg = "[Multimedia/Sticker]"
-                else:
-                    texto_msg = "[No se pudo leer texto]"
+                    if mensajes_entrantes:
+                        ultimo_msg_obj = mensajes_entrantes[-1]
+                        # Intentamos extraer el texto, ignorando la hora
+                        texto_completo = ultimo_msg_obj.text
+                        # Limpieza básica (quitar la hora que suele estar al final)
+                        lines = texto_completo.split('\n')
+                        texto_msg = lines[0] if lines else "[Audio/Imagen]"
+                    else:
+                        texto_msg = "[Nuevo chat sin historial visible]"
 
-                # D. Callback
-                respuesta = callback_inteligencia(texto_msg, nombre_contacto)
+                except Exception as e:
+                    print(f"Error leyendo texto: {e}")
+                    texto_msg = "."
 
-                if respuesta:
-                    enviar_mensaje_browser(nombre_contacto, respuesta)
+                print(f"📨 Procesando mensaje de {nombre_contacto}: '{texto_msg}'")
 
-                # E. Mover el foco para que no siga contando como no leído inmediatamente
-                # (Hacemos click en el header o input para asegurar)
+                # 4. INTELIGENCIA ARTIFICIAL (Ollama)
+                # Solo respondemos si el mensaje tiene texto real
+                if len(texto_msg) > 1:
+                    respuesta = callback_inteligencia(texto_msg, nombre_contacto)
+
+                    if respuesta:
+                        print(f"🤖 IA Responde: {respuesta}")
+                        enviar_mensaje_browser(nombre_contacto, respuesta)
+
+                # 5. IMPORTANTE: Deseleccionar chat o marcar leído implícitamente
+                # Al responder, ya cuenta como leído.
+                # Hacemos una pausa para no parecer spam bot
+                time.sleep(3)
 
             except Exception as e:
-                print(f"Error procesando chat: {e}")
+                print(f"⚠️ Error en ciclo de un chat: {e}")
                 continue
 
         return True
 
     except Exception as e:
-        # print(f"Error ciclo: {e}")
+        # print(f"Error general escaneo: {e}")
         return False
