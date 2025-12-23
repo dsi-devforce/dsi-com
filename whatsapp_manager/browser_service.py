@@ -33,15 +33,19 @@ def iniciar_navegador():
 
     print("🔧 Configurando Chrome (Docker)...")
 
-    # Definir rutas y directorios
     chrome_bin = "/usr/bin/chromium"
     driver_path = "/usr/bin/chromedriver"
-    user_data_dir = "/app/chrome_user_data"
+
+    # --- CAMBIO CLAVE AQUÍ ---
+    # Usamos una SUBCARPETA. La carpeta raiz '/app/chrome_user_data' es el volumen (intocable).
+    # La carpeta '/app/chrome_user_data/session' sí se puede borrar si se corrompe.
+    root_mount = "/app/chrome_user_data"
+    profile_dir = os.path.join(root_mount, "session")
 
     def get_options():
         opts = Options()
         opts.binary_location = chrome_bin
-        opts.add_argument(f"user-data-dir={user_data_dir}")
+        opts.add_argument(f"user-data-dir={profile_dir}")  # Apuntamos a la subcarpeta
         opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
@@ -54,26 +58,28 @@ def iniciar_navegador():
     service = Service(executable_path=driver_path, log_path="/app/chromedriver.log")
 
     try:
-        # INTENTO 1: Arrancar normal
+        # Intento 1
         driver = webdriver.Chrome(service=service, options=get_options())
     except Exception as e:
-        print(f"⚠️ Primer intento fallido ({e}). El perfil podría estar corrupto.")
-        print("Bg 🧹 Borrando perfil de usuario y reintentando...")
+        print(f"⚠️ Perfil corrupto detectado ({e}).")
+        print(f"Bg 🧹 Borrando subcarpeta de sesión: {profile_dir}")
 
-        # BORRADO DE EMERGENCIA DEL PERFIL
+        # AHORA SÍ FUNCIONARÁ EL BORRADO
         try:
-            shutil.rmtree(user_data_dir)
+            if os.path.exists(profile_dir):
+                shutil.rmtree(profile_dir)
+                print("✅ Perfil borrado correctamente.")
         except Exception as delete_error:
-            print(f"No se pudo borrar directorio: {delete_error}")
+            print(f"❌ Error al borrar perfil: {delete_error}")
 
-        # INTENTO 2: Arrancar limpio
+        # Intento 2 (Limpio)
+        print("🔄 Reintentando con perfil limpio...")
         try:
             driver = webdriver.Chrome(service=service, options=get_options())
         except Exception as final_e:
-            print(f"❌ ERROR FATAL IRRECUPERABLE: {final_e}")
+            print(f"❌ ERROR FATAL: {final_e}")
             raise final_e
 
-    # Configuración post-arranque
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     print("🌍 Navegando a WhatsApp Web...")
     driver.get("https://web.whatsapp.com")
