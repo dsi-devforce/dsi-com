@@ -358,15 +358,17 @@ def chat_interface(request, connection_id):
     """
     connection = get_object_or_404(WhatsappConnection, pk=connection_id)
 
-    # 1. Obtener lista de conversaciones (agrupando por teléfono)
-    # Hacemos una agrupación manual simple para obtener el último mensaje de cada teléfono
+    # 1. Obtener lista de conversaciones
     all_messages = connection.messages.all().order_by('-timestamp')
     contacts = {}
 
     for msg in all_messages:
-        if msg.phone_number not in contacts:
-            contacts[msg.phone_number] = {
-                'phone': msg.phone_number,
+        # Normalizamos el teléfono para agrupar (quitamos + si lo tiene)
+        clean_phone = msg.phone_number.replace('+', '').strip()
+
+        if clean_phone not in contacts:
+            contacts[clean_phone] = {
+                'phone': clean_phone,  # Usamos el limpio como clave
                 'last_msg': msg.body or f"[{msg.msg_type}]",
                 'timestamp': msg.timestamp
             }
@@ -378,16 +380,25 @@ def chat_interface(request, connection_id):
     active_messages = []
 
     if active_phone:
-        active_messages = connection.messages.filter(phone_number=active_phone).order_by('timestamp')
+        # Limpiamos también el input del GET
+        active_phone = active_phone.replace('+', '').strip()
+
+        # Filtramos buscando coincidencias exactas o parciales
+        # (A veces Meta envía 521... y tú guardaste 52...)
+        active_messages = connection.messages.filter(
+            phone_number__icontains=active_phone
+        ).order_by('timestamp')
+
+        # Log para depurar si sigue fallando
+        logger.info(f"Chat View - Buscando phone: {active_phone}. Encontrados: {active_messages.count()} mensajes.")
 
     context = {
         'connection': connection,
         'conversations': conversations,
         'active_phone': active_phone,
-        'active_messages': active_messages,  # Asegúrate de usar esta variable en tu template chat.html
+        'active_messages': active_messages,
     }
     return render(request, 'whatsapp_manager/chat.html', context)
-
 
 @require_http_methods(["POST"])
 def send_message_ui(request, connection_id):
