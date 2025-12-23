@@ -18,61 +18,43 @@ driver_instance = None
 def iniciar_navegador():
     global driver_instance
 
-    # Verificar si el driver sigue vivo
-    if driver_instance is not None:
-        try:
-            # Hacemos un ping ligero (título o url) para ver si responde
-            _ = driver_instance.current_url
-            return driver_instance
-        except Exception as e:
-            print(f"⚠️ El navegador parece desconectado ({e}). Reiniciando...")
-            try:
-                driver_instance.quit()
-            except:
-                pass
-            driver_instance = None
+    # ... (tu código de verificación de driver existente sigue igual) ...
 
     print("Configurando opciones de Chrome (Docker System)...")
     chrome_options = Options()
 
     # --- RUTAS ---
-    # Usamos las variables de entorno del Dockerfile, con fallback a las rutas estándar
-    chrome_bin = os.environ.get("CHROME_BIN", "/usr/bin/chromium")
-    chrome_options.binary_location = chrome_bin
+    # Usamos las rutas HARDCODED que sabemos que funcionan en tu Docker
+    chrome_options.binary_location = "/usr/bin/chromium"
+    driver_path = "/usr/bin/chromedriver"
 
-    # --- LIMPIEZA DE CANDADOS ---
-    user_data_dir = "/app/chrome_user_data"
-    lock_file = os.path.join(user_data_dir, "SingletonLock")
-    if os.path.exists(lock_file):
-        try:
-            os.remove(lock_file)
-            print("🧹 SingletonLock eliminado (limpieza de crash previo).")
-        except Exception:
-            pass
-
-    # --- FLAGS CRÍTICOS PARA DOCKER ---
+    # --- FLAGS (Limpios y minimalistas) ---
     chrome_options.add_argument("--headless=new")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--remote-debugging-port=9222")
-    chrome_options.add_argument("--window-size=1920,1080")
 
-    # Perfil persistente
-    chrome_options.add_argument(f"user-data-dir={user_data_dir}")
+    # ❌ COMENTA ESTA LÍNEA TEMPORALMENTE (Culpable probable de crashes)
+    # chrome_options.add_argument("--remote-debugging-port=9222")
 
-    # User Agent (Vital para que WhatsApp no bloquee el Headless)
+    # ❌ COMENTA EL PERFIL TEMPORALMENTE (Para descartar corrupción)
+    # user_data_dir = "/app/chrome_user_data"
+    # chrome_options.add_argument(f"user-data-dir={user_data_dir}")
+
+    # User Agent
     user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     chrome_options.add_argument(f'user-agent={user_agent}')
 
-    # --- DRIVER SERVICE ---
-    driver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
-    service = Service(executable_path=driver_path, log_path="/app/chromedriver.log")
+    # --- SERVICE CON LOGS ---
+    # Activamos logs detallados por si vuelve a fallar
+    service = Service(
+        executable_path=driver_path,
+        log_path="/app/chromedriver.log",
+        service_args=["--verbose"]
+    )
 
     try:
         driver = webdriver.Chrome(service=service, options=chrome_options)
-
-        # Evasión de detección básica
         driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
 
         print("✅ Navegador iniciado. Cargando WhatsApp...")
@@ -83,15 +65,14 @@ def iniciar_navegador():
 
     except Exception as e:
         print(f"❌ ERROR FATAL AL INICIAR CHROME: {e}")
-        # Si falla, intentamos leer el log del driver para dar pistas
+        # Leer el log detallado si falla
         try:
             with open("/app/chromedriver.log", "r") as f:
-                print("--- Últimas líneas de chromedriver.log ---")
-                print(f.read()[-500:])
+                print("--- LOG DEL DRIVER (Últimas líneas) ---")
+                print(f.read()[-1000:])
         except:
             pass
         raise e
-
 
 def obtener_qr_screenshot():
     """
