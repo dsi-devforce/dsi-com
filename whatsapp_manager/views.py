@@ -1,11 +1,5 @@
 import json
-import logging
-import os
-import mimetypes
-from io import BytesIO
 
-import requests
-import qrcode
 from django.conf import settings
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
@@ -26,8 +20,54 @@ from .browser_service import obtener_qr_screenshot
 from .forms import ConnectionForm
 from .models import WhatsappConnection, WebhookLog, Message
 from django.test import RequestFactory
+import threading
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .browser_service import iniciar_bucle_bot, driver_instance
 
-logger = logging.getLogger(__name__)
+# Variable global para controlar que no arranques 2 veces el bot
+bot_thread = None
+
+def cerebro_ia(texto, remitente):
+    # Aquí iría tu lógica real de IA
+    return f"🤖 (Auto): {texto}"
+
+@csrf_exempt
+def iniciar_bot_background(request):
+    global bot_thread
+
+    # 1. Verificar si ya está corriendo para no crear duplicados
+    if bot_thread is not None and bot_thread.is_alive():
+        return JsonResponse({
+            "status": "warning",
+            "mensaje": "⚠️ El bot YA está corriendo en segundo plano."
+        })
+
+    # 2. Definir la tarea envoltorio
+    def tarea_en_segundo_plano():
+        try:
+            # Esto ejecutará validación -> QR -> Bucle infinito
+            iniciar_bucle_bot(cerebro_ia)
+        except Exception as e:
+            print(f"❌ El hilo del bot murió: {e}")
+
+    # 3. Crear y lanzar el Hilo (Subproceso ligero)
+    bot_thread = threading.Thread(target=tarea_en_segundo_plano, name="BotWhatsApp")
+    bot_thread.daemon = True # Si se apaga el servidor, se apaga el bot
+    bot_thread.start()
+
+    return JsonResponse({
+        "status": "success",
+        "mensaje": "🚀 Bot lanzado en segundo plano. Puedes cerrar esta pestaña."
+    })
+
+def estado_bot(request):
+    """Vista simple para saber si sigue vivo"""
+    esta_vivo = bot_thread is not None and bot_thread.is_alive()
+    return JsonResponse({
+        "bot_corriendo": esta_vivo,
+        "driver_activo": driver_instance is not None
+    })
 
 # Configuración de la API de Meta
 GRAPH_API_VERSION = "v18.0"
