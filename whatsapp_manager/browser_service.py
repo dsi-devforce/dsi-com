@@ -236,6 +236,7 @@ def obtener_qr_screenshot():
         try:
             # Buscamos el panel lateral de chats
             wait.until(EC.presence_of_element_located((By.ID, "pane-side")))
+            garantizar_sesion_activa()
             return None, "YA_VINCULADO"
         except:
             pass  # Si no encuentra pane-side, sigue buscando QR

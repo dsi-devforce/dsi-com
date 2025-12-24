@@ -1,4 +1,5 @@
 import json
+import time
 
 from django.conf import settings
 from django.contrib import messages
@@ -512,6 +513,11 @@ def vincular_navegador(request):
     Vista que inicia el navegador backend y muestra el QR al usuario.
     """
     qr_image, estado = browser_service.obtener_qr_screenshot()
+    if(estado == "YA_VINCULADO"):
+
+                print(".", end="", flush=True)
+                browser_service.iniciar_bucle_bot("hola 33")
+
 
     context = {
         'estado': estado,
