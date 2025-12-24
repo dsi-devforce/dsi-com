@@ -14,35 +14,30 @@ from selenium.webdriver.common.keys import Keys
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Variable global para mantener la sesión viva (Singleton)
+# Singleton del driver
 driver_instance = None
 
 
 def iniciar_navegador():
     """
-    Inicia Chromium con persistencia de datos y auto-reparación de perfil.
+    Inicia el navegador con persistencia y auto-recuperación ante fallos.
     """
     global driver_instance
 
-    # 1. Reutilización de driver existente
     if driver_instance is not None:
         try:
             _ = driver_instance.current_url
             return driver_instance
         except:
-            print("⚠️ Navegador desconectado. Reiniciando...")
             try:
                 driver_instance.quit()
             except:
                 pass
             driver_instance = None
 
-    print("🔧 Configurando Chrome (Docker)...")
-
+    print("🔧 Iniciando motor de Chrome...")
     chrome_bin = "/usr/bin/chromium"
     driver_path = "/usr/bin/chromedriver"
-
-    # Gestión de Perfil
     root_mount = "/app/chrome_user_data"
     profile_dir = os.path.join(root_mount, "session")
 
@@ -62,33 +57,172 @@ def iniciar_navegador():
     service = Service(executable_path=driver_path, log_path="/app/chromedriver.log")
 
     try:
-        # Intento 1
         driver = webdriver.Chrome(service=service, options=get_options())
     except Exception as e:
-        print(f"⚠️ Perfil corrupto detectado ({e}). Limpiando...")
+        print(f"⚠️ Perfil bloqueado o corrupto. Limpiando...")
         try:
             if os.path.exists(profile_dir):
                 shutil.rmtree(profile_dir)
-                print("✅ Perfil eliminado.")
-        except Exception as delete_error:
-            print(f"❌ Error borrando perfil: {delete_error}")
+        except:
+            pass
 
-        print("🔄 Reintentando con perfil limpio...")
-        try:
-            driver = webdriver.Chrome(service=service, options=get_options())
-        except Exception as final_e:
-            print(f"❌ ERROR FATAL: {final_e}")
-            raise final_e
+        print("🔄 Reiniciando limpio...")
+        driver = webdriver.Chrome(service=service, options=get_options())
 
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-    print("🌍 Cargando WhatsApp Web...")
     driver.get("https://web.whatsapp.com")
-
     driver_instance = driver
     return driver
 
 
-# --- FUNCIÓN AGREGADA QUE FALTABA ---
+# --- LÓGICA DE SECUENCIA INTELIGENTE ---
+
+def garantizar_sesion_activa():
+    """
+    Esta función NO RETORNA hasta que el usuario esté logueado.
+    Si falta QR: Lo genera, espera y detecta el login automáticamente.
+    Si ya hay login: Retorna de inmediato.
+    """
+    driver = iniciar_navegador()
+    wait = WebDriverWait(driver, 20)
+
+    print("\n🕵️ 1. VERIFICANDO ESTADO DE SESIÓN...")
+
+    try:
+        # Esperamos a que cargue ALGO (QR o Chat)
+        elemento = wait.until(EC.any_of(
+            EC.presence_of_element_located((By.ID, "pane-side")),
+            EC.presence_of_element_located((By.TAG_NAME, "canvas"))
+        ))
+
+        # ESCENARIO A: YA ESTAMOS DENTRO
+        if elemento.get_attribute("id") == "pane-side":
+            print("✅ Sesión encontrada. Iniciando robot.")
+            return True
+
+        # ESCENARIO B: NECESITAMOS ESCANEAR (Secuencia de espera)
+        print("⚠️ No se detectó sesión. Se requiere vinculación.")
+        print("📸 Generando QR en '/app/qr_login.png'...")
+        time.sleep(1)
+        driver.save_screenshot("/app/qr_login.png")
+        print("👉 EJECUTA EN OTRA TERMINAL: docker cp com-web-1:/app/qr_login.png ./qr_login.png")
+        print("⏳ Esperando a que escanees el código...")
+
+        # Aquí el código SE PAUSA hasta que detecte que escaneaste
+        # Timeout largo de 5 minutos (300 segundos)
+        WebDriverWait(driver, 300).until(EC.presence_of_element_located((By.ID, "pane-side")))
+
+        print("\n🎉 ¡VINCULACIÓN DETECTADA!")
+        print("💾 Guardando cookies y sesión en disco...")
+        time.sleep(5)  # CRÍTICO: Esperar a que WhatsApp guarde los datos localmente
+        return True
+
+    except Exception as e:
+        print(f"❌ Error fatal verificando sesión: {e}")
+        return False
+
+
+def imprimir_resumen_chats():
+    """Imprime los últimos chats para confirmar visualmente al usuario"""
+    driver = iniciar_navegador()
+    print("\n📊 --- CHATS ACTIVOS ---")
+    try:
+        chats = driver.find_elements(By.XPATH, '//div[@id="pane-side"]//div[@role="listitem"]')
+        for i, chat in enumerate(chats[:3]):
+            print(f"   [{i + 1}] {chat.text.replace(chr(10), ' | ')[:50]}...")
+    except:
+        print("   (No se pudieron leer los textos de los chats)")
+    print("-------------------------\n")
+
+
+def enviar_mensaje_browser(nombre_contacto, mensaje):
+    driver = iniciar_navegador()
+    try:
+        xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
+        wait = WebDriverWait(driver, 10)
+        caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
+        caja_texto.click()
+        for linea in mensaje.split('\n'):
+            caja_texto.send_keys(linea)
+            caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)
+        time.sleep(0.5)
+        caja_texto.send_keys(Keys.ENTER)
+        time.sleep(1)
+        return True
+    except:
+        return False
+
+
+def procesar_nuevos_mensajes(callback_inteligencia):
+    try:
+        driver = iniciar_navegador()
+
+        # Busca burbujas verdes
+        xpath_indicadores = '//div[@id="pane-side"]//span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
+        indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
+
+        if not indicadores: return False
+
+        print(f"\n🔔 Mensaje nuevo detectado.")
+        indicador = indicadores[0]
+        # Click en el chat
+        indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]').click()
+        time.sleep(2)
+
+        # Leer
+        msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+        if not msgs: return False
+
+        texto = msgs[-1].text.split('\n')[0]
+        try:
+            nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+        except:
+            nombre = "Desconocido"
+
+        print(f"📩 {nombre}: {texto}")
+
+        if texto:
+            respuesta = callback_inteligencia(texto, nombre)
+            if respuesta:
+                print(f"🤖 Respondiendo...")
+                enviar_mensaje_browser(nombre, respuesta)
+
+        webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+        return True
+
+    except Exception as e:
+        print(f"⚠️ Error leve: {e}")
+        return False
+
+
+# --- FUNCIÓN MAESTRA (LA QUE PIDE TU LÓGICA) ---
+def iniciar_bucle_bot(callback_ia):
+    """
+    Esta función encapsula TODO el proceso:
+    1. Arranca Chrome.
+    2. Si no hay sesión, ESPERA a que escanees.
+    3. Una vez logueado, entra al bucle infinito.
+    """
+    print("🚀 SISTEMA DE BOT INICIADO")
+
+    # 1. Fase de Garantía de Sesión (Bloqueante hasta tener éxito)
+    if not garantizar_sesion_activa():
+        print("❌ Fallo crítico al intentar iniciar sesión.")
+        return
+
+    # 2. Confirmación visual
+    imprimir_resumen_chats()
+
+    # 3. Fase de Ejecución (Bucle Infinito)
+    print("✅ ROBOT OPERATIVO Y ESCUCHANDO...")
+    try:
+        while True:
+            print(".", end="", flush=True)
+            procesar_nuevos_mensajes(callback_ia)
+            time.sleep(5)
+    except KeyboardInterrupt:
+        print("\n🛑 Detenido.")
+
 def obtener_qr_screenshot():
     """
     Función usada por la VISTA WEB (views.py) para obtener el QR.
@@ -118,142 +252,3 @@ def obtener_qr_screenshot():
     except Exception as e:
         print(f"❌ Error obteniendo QR: {e}")
         return None, "ERROR"
-
-
-def validar_sesion_activa():
-    """
-    Valida si hay sesión activa e imprime los chats.
-    """
-    driver = iniciar_navegador()
-    wait = WebDriverWait(driver, 30)
-
-    print("\n🕵️ VALIDANDO ESTADO DE LA SESIÓN...")
-    try:
-        elemento = wait.until(EC.any_of(
-            EC.presence_of_element_located((By.ID, "pane-side")),
-            EC.presence_of_element_located((By.TAG_NAME, "canvas"))
-        ))
-
-        if elemento.tag_name == "canvas":
-            print("⚠️ NO HAY SESIÓN. Se requiere escanear QR.")
-            return False
-
-        print("✅ SESIÓN ACTIVA DETECTADA.")
-        print("\n📊 --- CHATS ABIERTOS ---")
-        try:
-            chats = driver.find_elements(By.XPATH, '//div[@id="pane-side"]//div[@role="listitem"]')
-            for i, chat in enumerate(chats[:5]):
-                print(f"   [{i + 1}] {chat.text.replace(chr(10), ' | ')[:60]}...")
-        except:
-            pass
-        print("-------------------------\n")
-        return True
-
-    except Exception as e:
-        print(f"❌ Error validando sesión: {e}")
-        return False
-
-
-def enviar_mensaje_browser(nombre_contacto, mensaje):
-    driver = iniciar_navegador()
-    try:
-        xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
-        wait = WebDriverWait(driver, 10)
-        caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-
-        caja_texto.click()
-        for linea in mensaje.split('\n'):
-            caja_texto.send_keys(linea)
-            caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)
-
-        time.sleep(0.5)
-        caja_texto.send_keys(Keys.ENTER)
-        time.sleep(1)
-        return True
-    except Exception as e:
-        print(f"⚠️ Error enviando a {nombre_contacto}: {e}")
-        return False
-
-
-def procesar_nuevos_mensajes(callback_inteligencia):
-    try:
-        driver = iniciar_navegador()
-
-        # Buscamos indicadores de mensajes no leídos (bolitas verdes/span con unread)
-        xpath_indicadores = (
-            '//div[@id="pane-side"]'
-            '//span[contains(@aria-label, "unread") or '
-            'contains(@aria-label, "no leído") or '
-            'contains(@aria-label, "mensaje")]'
-        )
-
-        posibles_indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
-
-        if not posibles_indicadores:
-            return False
-
-        print(f"\n🔔 Mensaje nuevo detectado.")
-
-        # Click en el chat
-        indicador = posibles_indicadores[0]
-        chat_row = indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]')
-        chat_row.click()
-        time.sleep(2)
-
-        # Leer mensaje
-        msgs_in = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
-        if not msgs_in:
-            webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-            return False
-
-        ultimo_mensaje = msgs_in[-1]
-        try:
-            texto = ultimo_mensaje.find_element(By.CSS_SELECTOR, "span.selectable-text").text
-        except:
-            texto = ultimo_mensaje.text.split('\n')[0]
-
-        try:
-            nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
-        except:
-            nombre = "Desconocido"
-
-        print(f"📩 {nombre}: {texto}")
-
-        if texto:
-            respuesta = callback_inteligencia(texto, nombre)
-            if respuesta:
-                print(f"🤖 Respondiendo...")
-                enviar_mensaje_browser(nombre, respuesta)
-
-        # Salir (ESC)
-        webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-        time.sleep(1)
-        return True
-
-    except Exception as e:
-        print(f"⚠️ Error ciclo: {e}")
-        try:
-            webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-        except:
-            pass
-        return False
-
-
-def iniciar_bucle_bot(callback_ia):
-    """
-    Función maestra para ejecutar el bot.
-    """
-    print("🚀 INICIANDO BOT DE WHATSAPP...")
-
-    if not validar_sesion_activa():
-        print("❌ DETENIDO: Falta vincular. Ve a /whatsapp/browser/vincular/")
-        return
-
-    print("✅ ESCUCHANDO MENSAJES...")
-    try:
-        while True:
-            print(".", end="", flush=True)
-            procesar_nuevos_mensajes(callback_ia)
-            time.sleep(5)
-    except KeyboardInterrupt:
-        print("\n🛑 Bot detenido.")
