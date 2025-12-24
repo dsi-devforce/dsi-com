@@ -37,6 +37,7 @@ def iniciar_bot_background(request):
 
     # 1. Verificar si ya está corriendo para no crear duplicados
     if bot_thread is not None and bot_thread.is_alive():
+        _lanzar_hilo_bot()
         return JsonResponse({
             "status": "warning",
             "mensaje": "⚠️ El bot YA está corriendo en segundo plano."
@@ -59,6 +60,24 @@ def iniciar_bot_background(request):
         "status": "success",
         "mensaje": "🚀 Bot lanzado en segundo plano. Puedes cerrar esta pestaña."
     })
+
+
+def _lanzar_hilo_bot():
+    """Función auxiliar para iniciar el hilo de forma segura"""
+    global bot_thread
+    if bot_thread is not None and bot_thread.is_alive():
+        return False
+
+    def tarea_en_segundo_plano():
+        try:
+            browser_service.iniciar_bucle_bot(cerebro_ia)
+        except Exception as e:
+            print(f"❌ El hilo del bot murió: {e}")
+
+    bot_thread = threading.Thread(target=tarea_en_segundo_plano, name="BotWhatsApp")
+    bot_thread.daemon = True
+    bot_thread.start()
+    return True
 
 def estado_bot(request):
     """Vista simple para saber si sigue vivo"""
@@ -510,17 +529,32 @@ def send_message_ui(request, connection_id):
 def vincular_navegador(request):
     """
     Vista que inicia el navegador backend y muestra el QR al usuario.
+    Valida la sesión y transiciona a las respuestas automáticas.
     """
+    global bot_thread
+
+    # 1. INTEGRIDAD: Si el bot ya está corriendo, no tocamos el driver ni pedimos QR.
+    if bot_thread is not None and bot_thread.is_alive():
+        return render(request, 'whatsapp_manager/vincular_browser.html', {
+            'estado': 'BOT_ACTIVO',
+            'qr_image': None
+        })
+
+    # 2. Consultamos al servicio (protegido por Lock)
     qr_image, estado = browser_service.obtener_qr_screenshot()
+
+    # 3. LÓGICA DE TRANSICIÓN: Si detectamos que ya se vinculó, arrancamos el bot.
+    if estado == "YA_VINCULADO":
+        logger.info("✅ Sesión detectada en la vista. Arrancando bot automáticamente...")
+        _lanzar_hilo_bot()
+        # Cambiamos el estado visual para que el usuario sepa que está iniciando
+        estado = "INICIANDO_BOT"
 
     context = {
         'estado': estado,
         'qr_image': qr_image
     }
     return render(request, 'whatsapp_manager/vincular_browser.html', context)
-
-
-
 
 OLLAMA_API_URL = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434/api/generate")
 OLLAMA_MODEL = "qwen2.5:3b"

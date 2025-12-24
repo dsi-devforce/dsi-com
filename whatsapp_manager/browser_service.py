@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+import threading
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Singleton del driver
 driver_instance = None
-
+driver_lock = threading.Lock()
 
 def iniciar_navegador():
     """
@@ -83,8 +84,9 @@ def garantizar_sesion_activa():
     Si falta QR: Lo genera, espera y detecta el login automáticamente.
     Si ya hay login: Retorna de inmediato.
     """
-    driver = iniciar_navegador()
-    wait = WebDriverWait(driver, 20)
+    with driver_lock:
+        driver = iniciar_navegador()
+        wait = WebDriverWait(driver, 20)
 
     print("\n🕵️ 1. VERIFICANDO ESTADO DE SESIÓN...")
 
@@ -124,71 +126,74 @@ def garantizar_sesion_activa():
 
 def imprimir_resumen_chats():
     """Imprime los últimos chats para confirmar visualmente al usuario"""
-    driver = iniciar_navegador()
-    print("\n📊 --- CHATS ACTIVOS ---")
-    try:
-        chats = driver.find_elements(By.XPATH, '//div[@id="pane-side"]//div[@role="listitem"]')
-        for i, chat in enumerate(chats[:3]):
-            print(f"   [{i + 1}] {chat.text.replace(chr(10), ' | ')[:50]}...")
-    except:
-        print("   (No se pudieron leer los textos de los chats)")
-    print("-------------------------\n")
+    with driver_lock:
+        driver = iniciar_navegador()
+        print("\n📊 --- CHATS ACTIVOS ---")
+        try:
+            chats = driver.find_elements(By.XPATH, '//div[@id="pane-side"]//div[@role="listitem"]')
+            for i, chat in enumerate(chats[:3]):
+                print(f"   [{i + 1}] {chat.text.replace(chr(10), ' | ')[:50]}...")
+        except:
+            print("   (No se pudieron leer los textos de los chats)")
+        print("-------------------------\n")
 
 
 def enviar_mensaje_browser(nombre_contacto, mensaje):
-    driver = iniciar_navegador()
-    try:
-        xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
-        wait = WebDriverWait(driver, 10)
-        caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-        caja_texto.click()
-        for linea in mensaje.split('\n'):
-            caja_texto.send_keys(linea)
-            caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)
-        time.sleep(0.5)
-        caja_texto.send_keys(Keys.ENTER)
-        time.sleep(1)
-        return True
-    except:
-        return False
+    with driver_lock:
+        driver = iniciar_navegador()
+        try:
+            xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
+            wait = WebDriverWait(driver, 10)
+            caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
+            caja_texto.click()
+            for linea in mensaje.split('\n'):
+                caja_texto.send_keys(linea)
+                caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)
+            time.sleep(0.5)
+            caja_texto.send_keys(Keys.ENTER)
+            time.sleep(1)
+            return True
+        except:
+            return False
 
 
 def procesar_nuevos_mensajes(callback_inteligencia):
     try:
-        driver = iniciar_navegador()
+        with driver_lock:
+            driver = iniciar_navegador()
 
-        # Busca burbujas verdes
-        xpath_indicadores = '//div[@id="pane-side"]//span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
-        indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
+            # Busca burbujas verdes
+            xpath_indicadores = '//div[@id="pane-side"]//span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
+            indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
 
-        if not indicadores: return False
+            if not indicadores: return False
 
-        print(f"\n🔔 Mensaje nuevo detectado.")
-        indicador = indicadores[0]
-        # Click en el chat
-        indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]').click()
-        time.sleep(2)
+            print(f"\n🔔 Mensaje nuevo detectado.")
+            indicador = indicadores[0]
+            # Click en el chat
+            indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]').click()
+            time.sleep(2)
 
-        # Leer
-        msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
-        if not msgs: return False
+            # Leer
+            msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+            if not msgs: return False
 
-        texto = msgs[-1].text.split('\n')[0]
-        try:
-            nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
-        except:
-            nombre = "Desconocido"
+            texto = msgs[-1].text.split('\n')[0]
+            try:
+                nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+            except:
+                nombre = "Desconocido"
 
-        print(f"📩 {nombre}: {texto}")
+            print(f"📩 {nombre}: {texto}")
 
-        if texto:
-            respuesta = callback_inteligencia(texto, nombre)
-            if respuesta:
-                print(f"🤖 Respondiendo...")
-                enviar_mensaje_browser(nombre, respuesta)
+            if texto:
+                respuesta = callback_inteligencia(texto, nombre)
+                if respuesta:
+                    print(f"🤖 Respondiendo...")
+                    enviar_mensaje_browser(nombre, respuesta)
 
-        webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-        return True
+            webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+            return True
 
     except Exception as e:
         print(f"⚠️ Error leve: {e}")
@@ -228,6 +233,8 @@ def obtener_qr_screenshot():
     Función usada por la VISTA WEB (views.py) para obtener el QR.
     Retorna (base64_image, status_text)
     """
+    if not driver_lock.acquire(blocking=False):
+        return None, "BOT_OCUPADO"
     try:
         driver = iniciar_navegador()
         wait = WebDriverWait(driver, 15)
@@ -253,3 +260,5 @@ def obtener_qr_screenshot():
     except Exception as e:
         print(f"❌ Error obteniendo QR: {e}")
         return None, "ERROR"
+    finally:
+        driver_lock.release()
