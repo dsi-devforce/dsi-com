@@ -1,3 +1,4 @@
+import os
 import time
 from django.core.management.base import BaseCommand
 from whatsapp_manager.models import WhatsappConnection
@@ -16,37 +17,28 @@ class Command(BaseCommand):
     help = 'Bot de WhatsApp Browser Automation'
 
     def handle(self, *args, **options):
+        self.stdout.write(self.style.WARNING('--- 🧹 LIMPIEZA PREVENTIVA ---'))
+        # 1. MATAR ZOMBIES: Forzamos el cierre de cualquier Chrome pegado
+        # Esto libera el "candado" de la carpeta de sesión.
+        os.system("pkill -f chrome")
+        os.system("pkill -f chromium")
+        time.sleep(2)  # Dar tiempo al sistema para liberar archivos
+
         self.stdout.write(self.style.SUCCESS('--- 🚀 BOT NAVEGADOR INICIADO ---'))
-        self.stdout.write('Esperando escaneo de QR o mensajes...')
 
-        # 1. Intentar abrir navegador preventivamente
+        # 2. Ahora sí, iniciamos el navegador limpio.
+        # Al no haber zombies, podrá leer tu carpeta de sesión correctamente.
         try:
-            iniciar_navegador()
+            driver = iniciar_navegador()
+            self.stdout.write("✅ Navegador cargado. Verificando sesión...")
+            # Pequeña espera para ver si carga chats o pide QR
+            time.sleep(5)
+            if "pane-side" in driver.page_source:
+                self.stdout.write(self.style.SUCCESS("🔓 ¡SESIÓN RECUPERADA EXITOSAMENTE!"))
+            else:
+                self.stdout.write(self.style.ERROR("🔒 No detecto chats. Posiblemente pida QR."))
         except Exception as e:
-            self.stdout.write(self.style.ERROR(f'Alerta: Navegador no inició aún ({e})'))
-
-        # 2. Definir conexión activa (Dummy si no hay BD aún)
-        conexion_activa = WhatsappConnection.objects.filter(is_active=True).first()
-        if not conexion_activa:
-            # Creamos un objeto en memoria si no hay nada en la DB para evitar errores
-            conexion_activa = WhatsappConnection(name="Default", display_phone_number="000")
-
-        # 3. Callback interno para conectar con la IA
-        #def callback_ia(texto, remitente):
-        #    if not texto: return None
-
-        #    self.stdout.write(f"🧠 Procesando mensaje de {remitente}...")
-
-        #    if ai_agent_logic:
-        #        try:
-        #            return ai_agent_logic(conexion_activa, texto, remitente)
-        #        except Exception as e:
-        #            print(f"Error en IA Logic: {e}")
-        #            return "Lo siento, tuve un error interno."
-        #    else:
-                # Fallback si no pudimos importar views.py
-        #        return f"Echo: {texto}"
-
+            self.stdout.write(self.style.ERROR(f'Alerta: Navegador no inició ({e})'))
         def callback_ia(texto, remitente):
             print(f"📥 MENSAJE RECIBIDO DE {remitente}: {texto}")
             return f"🤖 Recibido: {texto}"
