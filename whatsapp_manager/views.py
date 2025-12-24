@@ -16,14 +16,13 @@ import requests
 import qrcode
 
 logger = logging.getLogger(__name__)
-from .browser_service import obtener_qr_screenshot
 from .forms import ConnectionForm
 from .models import WhatsappConnection, WebhookLog, Message
 from django.test import RequestFactory
 import threading
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from .browser_service import iniciar_bucle_bot, driver_instance
+from . import browser_service
 
 # Variable global para controlar que no arranques 2 veces el bot
 bot_thread = None
@@ -47,7 +46,7 @@ def iniciar_bot_background(request):
     def tarea_en_segundo_plano():
         try:
             # Esto ejecutará validación -> QR -> Bucle infinito
-            iniciar_bucle_bot(cerebro_ia)
+            browser_service.iniciar_bucle_bot(cerebro_ia)
         except Exception as e:
             print(f"❌ El hilo del bot murió: {e}")
 
@@ -66,7 +65,7 @@ def estado_bot(request):
     esta_vivo = bot_thread is not None and bot_thread.is_alive()
     return JsonResponse({
         "bot_corriendo": esta_vivo,
-        "driver_activo": driver_instance is not None
+        "driver_activo": browser_service.driver_instance is not None
     })
 
 # Configuración de la API de Meta
@@ -512,7 +511,7 @@ def vincular_navegador(request):
     """
     Vista que inicia el navegador backend y muestra el QR al usuario.
     """
-    qr_image, estado = obtener_qr_screenshot()
+    qr_image, estado = browser_service.obtener_qr_screenshot()
 
     context = {
         'estado': estado,
