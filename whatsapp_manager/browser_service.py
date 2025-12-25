@@ -173,43 +173,67 @@ def imprimir_resumen_chats():
             print("   (No se pudieron leer los textos de los chats)")
         print("-------------------------\n")
 
-
 def enviar_mensaje_browser(nombre_contacto, mensaje):
-    with driver_lock:
-        driver = iniciar_navegador()
-        print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
+        with driver_lock:
+            driver = iniciar_navegador()
+            print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
 
-        try:
-            # Estrategia 1: Buscar caja de texto enfocada o el footer
-            xpath_input = '//footer//div[@contenteditable="true"][@role="textbox"]'
-
-            wait = WebDriverWait(driver, 10)
-            caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-
-            # Asegurar foco
-            caja_texto.click()
-            time.sleep(0.5)
-
-            # Escribir línea por línea
-            for linea in mensaje.split('\n'):
-                caja_texto.send_keys(linea)
-                caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)  # Salto de línea
-
-            time.sleep(0.5)
-            caja_texto.send_keys(Keys.ENTER)  # ENVIAR
-
-            print(f"   📤 ¡Mensaje enviado exitosamente!")
-            return True
-        except Exception as e:
-            print(f"   ❌ ERROR enviando mensaje: {e}")
-            # Intentar estrategia de emergencia con JS si falla Selenium
             try:
-                driver.execute_script("arguments[0].innerHTML = arguments[1];", caja_texto, mensaje)
+                # --- ESTRATEGIA MEJORADA DE SELECTORES ---
+                # Buscamos la caja de texto editable por sus atributos, sin depender del footer
+                xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
+
+                wait = WebDriverWait(driver, 10)
+
+                # Esperamos a que sea visible Y clickeable
+                caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
+
+                # 1. Limpieza y Foco (Click JS es más seguro aquí)
+                driver.execute_script("arguments[0].click();", caja_texto)
+                caja_texto.clear()
+                time.sleep(0.5)
+
+                # 2. Escribir el mensaje (Simulando tipeo humano para evitar bloqueos)
+                # Usamos clipboard o send_keys directo. Aquí send_keys es más seguro.
+                for linea in mensaje.split('\n'):
+                    caja_texto.send_keys(linea)
+                    caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)  # Salto de línea
+                    time.sleep(0.1)  # Pequeña pausa entre líneas
+
+                time.sleep(0.5)
+
+                # 3. ENVIAR (Dos métodos para asegurar)
                 caja_texto.send_keys(Keys.ENTER)
-                print("   ⚠️ Enviado vía inyección JS (Fallback).")
+
+                # Si el Enter no funciona, buscamos el botón de enviar visual
+                try:
+                    boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
+                    boton_enviar.click()
+                except:
+                    pass  # Si no encuentra el botón, confiamos en el Enter anterior
+
+                print(f"   📤 ¡Mensaje enviado exitosamente!")
                 return True
-            except:
-                return False
+
+            except Exception as e:
+                print(f"   ❌ ERROR enviando mensaje: {e}")
+
+                # --- ESTRATEGIA DE EMERGENCIA (Javascript puro) ---
+                try:
+                    # Inyectamos el texto directamente en el DOM y disparamos evento de cambio
+                    script = """
+                    var elm = arguments[0];
+                    elm.innerHTML = arguments[1];
+                    elm.dispatchEvent(new Event('input', {bubbles: true}));
+                    """
+                    driver.execute_script(script, caja_texto, mensaje.replace('\n', '<br>'))
+                    time.sleep(0.5)
+                    caja_texto.send_keys(Keys.ENTER)
+                    print("   ⚠️ Enviado vía inyección JS (Fallback).")
+                    return True
+                except Exception as e2:
+                    print(f"   ❌ Falló también el intento de emergencia: {e2}")
+                    return False
 
 def procesar_nuevos_mensajes(callback_inteligencia):
         try:
