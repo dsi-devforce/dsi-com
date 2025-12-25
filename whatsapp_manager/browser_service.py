@@ -327,7 +327,7 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 # Trabajamos EXCLUSIVAMENTE sobre el último contenedor de mensaje
                 last_msg_container = msgs_containers[-1]
-
+                print(last_msg_container)
                 # 1. Extracción del TEXTO (Scoped)
                 try:
                     # Buscamos el span de texto SOLO dentro del último contenedor
