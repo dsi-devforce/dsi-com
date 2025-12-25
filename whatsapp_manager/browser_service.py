@@ -194,48 +194,53 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
                 print("   📄 HTML completo guardado en '/app/debug_page.html'")
                 # ------------------------------
 
-            driver.execute_script("arguments[0].focus();", caja_texto)
-            time.sleep(0.2)
+                driver.execute_script("arguments[0].focus();", caja_texto)
+                time.sleep(0.2)
 
-            # 3. ESCRITURA NUCLEAR (Dispara todos los eventos posibles)
-            # Esta función JS simula que el usuario escribió, disparando eventos que React escucha.
-            script_escritura = """
-                           var element = arguments[0];
-                           var text = arguments[1];
+                # 3. ESCRITURA NUCLEAR (Dispara todos los eventos posibles)
+                # Esta función JS simula que el usuario escribió, disparando eventos que React escucha.
+                script_escritura = """
+                               var element = arguments[0];
+                               var text = arguments[1];
 
-                           // Método 1: execCommand (Legacy pero efectivo)
-                           document.execCommand('insertText', false, text);
+                               // Método 1: execCommand (Legacy pero efectivo)
+                               document.execCommand('insertText', false, text);
 
-                           // Método 2: Manipulación directa + Eventos (Fallback moderno)
-                           if (element.textContent !== text) {
-                               element.innerHTML = text.replace(/\\n/g, '<br>');
+                               // Método 2: Manipulación directa + Eventos (Fallback moderno)
+                               if (element.textContent !== text) {
+                                   element.innerHTML = text.replace(/\\n/g, '<br>');
 
-                               var eventInput = new Event('input', { bubbles: true });
-                               element.dispatchEvent(eventInput);
+                                   var eventInput = new Event('input', { bubbles: true });
+                                   element.dispatchEvent(eventInput);
 
-                               var eventChange = new Event('change', { bubbles: true });
-                               element.dispatchEvent(eventChange);
-                           }
-                           """
-            driver.execute_script(script_escritura, caja_texto, mensaje)
+                                   var eventChange = new Event('change', { bubbles: true });
+                                   element.dispatchEvent(eventChange);
+                               }
+                               """
+                driver.execute_script(script_escritura, caja_texto, mensaje)
 
-            print("   ⌨️ Texto inyectado. Esperando validación de UI...")
-            time.sleep(1)  # Esperamos a que el icono de Micrófono cambie a Avión
+                print("   ⌨️ Texto inyectado. Esperando validación de UI...")
+                time.sleep(1)  # Esperamos a que el icono de Micrófono cambie a Avión
 
-            # 4. ENVÍO (Click en el botón que APARECIÓ)
-            try:
-                # Buscamos el botón SEND explícitamente.
-                # El span data-icon="send" solo aparece si hay texto valido.
-                boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
-                boton_enviar.click()
-                print(f"   👉 Click en botón 'Enviar' (Avión) realizado.")
-            except:
-                # Si no aparece el avión, intentamos Enter como fallback
-                print(f"   ⚠️ No apareció el botón de enviar. Intentando Enter...")
-                caja_texto.send_keys(Keys.ENTER)
+                # 4. ENVÍO (Click en el botón que APARECIÓ)
+                try:
+                    # Buscamos el botón SEND explícitamente.
+                    # El span data-icon="send" solo aparece si hay texto valido.
+                    boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
+                    boton_enviar.click()
+                    print(f"   👉 Click en botón 'Enviar' (Avión) realizado.")
+                except:
+                    # Si no aparece el avión, intentamos Enter como fallback
+                    print(f"   ⚠️ No apareció el botón de enviar. Intentando Enter...")
+                    caja_texto.send_keys(Keys.ENTER)
 
-            print(f"   📤 ¡Mensaje enviado exitosamente!")
-            return True
+                print(f"   📤 ¡Mensaje enviado exitosamente!")
+                return True
+
+            except Exception as e:
+                print(f"   ❌ ERROR enviando mensaje: {e}")
+                return False
+
 
 
 def procesar_nuevos_mensajes(callback_inteligencia):
