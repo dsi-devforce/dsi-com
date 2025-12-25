@@ -50,14 +50,16 @@ def cerebro_ia(texto, remitente):
             "🔹 O simplemente charlar con mi IA.\n\n"
             "_¿En qué te ayudo hoy?_"
         )
-
+    iacom = "#dsia"
+    if (iacom in texto):
+        texto = texto.replace(iacom, "")
     # 2. INTENTO DE IA (OLLAMA)
     # Si tienes Ollama corriendo, esto funcionará. Si no, pasamos al fallback.
-    try:
-        return call_ollama_ai(texto, "Eres un asistente útil.") # Descomenta si usas Ollama
-        pass
-    except:
-        pass
+        try:
+            return call_ollama_ai(texto, "Eres un asistente útil.") # Descomenta si usas Ollama
+            pass
+        except:
+            pass
 
     # 3. FALLBACK (Si todo lo demás falla)
     return f"🤖 (Auto-Reply): Recibí tu mensaje: '{texto}'. (Configura la IA para respuestas más complejas)"
