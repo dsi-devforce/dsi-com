@@ -627,3 +627,29 @@ def call_ollama_ai(user_text, system_prompt):
     except Exception as e:
         logger.error(f"Error en Ollama: {e}")
         return "⚠️ Ocurrió un error procesando tu respuesta."
+
+
+def debug_browser_html(request):
+    """
+    Lee el archivo debug_page.html generado por Selenium y lo muestra.
+    Útil para inspeccionar el DOM real que ve el bot.
+    """
+    debug_path = "/app/debug_page.html"
+
+    if not os.path.exists(debug_path):
+        return HttpResponse(
+            "<h1>⚠️ No hay captura de debug disponible.</h1>"
+            "<p>El bot debe intentar enviar un mensaje primero para generar el archivo.</p>"
+            "<a href='/whatsapp/dashboard/'>Volver</a>"
+        )
+
+    try:
+        with open(debug_path, "r", encoding="utf-8") as f:
+            html_content = f.read()
+
+        # Retornamos el HTML crudo para que el navegador lo renderice tal cual
+        # Opcional: Podríamos envolverlo en un template si quisieramos agregarle un header
+        return HttpResponse(html_content)
+
+    except Exception as e:
+        return HttpResponse(f"Error leyendo archivo de debug: {str(e)}", status=500)

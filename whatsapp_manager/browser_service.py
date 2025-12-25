@@ -180,48 +180,10 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
             print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
             try:
                 # 1. BUSQUEDA DEL INPUT
-                xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
-                wait = WebDriverWait(driver, 10)
-                caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-
-                # --- DIAGNÓSTICO EN CONSOLA (SOLICITADO) ---
-                print("\n🔍 --- DIAGNÓSTICO DEL INPUT ---")
-
-                # 1. Atributos clave
-                print(f"   TAG: {caja_texto.tag_name}")
-                print(f"   CLASES: {caja_texto.get_attribute('class')}")
-                print(f"   ARIA-LABEL: {caja_texto.get_attribute('aria-label')}")
-
-                # 2. HTML del elemento (Limitado a 500 chars para no saturar)
-                html_input = caja_texto.get_attribute('outerHTML')
-                print(f"   HTML INPUT (Recortado): {html_input[:500]}...")
-
-                # 3. HTML del Footer (El contenedor padre, para ver el botón de enviar)
-                try:
-                    footer = caja_texto.find_element(By.XPATH, "./ancestor::footer")
-                    html_footer = footer.get_attribute('innerHTML')
-                    # Buscamos si existe el botón de enviar en el HTML del footer
-                    tiene_boton = 'data-icon="send"' in html_footer
-                    print(f"   ¿BOTÓN ENVIAR VISIBLE EN FOOTER?: {'SÍ' if tiene_boton else 'NO'}")
-                except:
-                    print(f"   (No se pudo analizar el footer)")
-
-                print("--------------------------------\n")
-                # --------------------------------------------
-
-                # 2. LIMPIEZA Y FOCO
-                driver.execute_script("arguments[0].focus();", caja_texto)
-                time.sleep(0.2)
-            except:
-                pass
-
-            try:
-                # 1. BUSQUEDA DEL INPUT
                 # Buscamos especificamente el textbox editable
                 xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
                 wait = WebDriverWait(driver, 10)
                 caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-
                 # --- DIAGNÓSTICO SOLICITADO ---
                 # Imprimimos el HTML del elemento encontrado para verificar que es el correcto
                 print(f"   🔍 Elemento encontrado: {caja_texto.get_attribute('outerHTML')[:150]}...")
