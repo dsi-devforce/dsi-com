@@ -35,7 +35,41 @@ def cerebro_ia(texto, remitente):
     """
     texto = texto.lower().strip()
     print(f"🧠 CEREBRO: Analizando '{texto}' de {remitente}")
+    # --- COMANDO #dsimail ---
+    if "#dsimail" in texto:
+        print("📧 Comando de correos detectado...")
+        url = "https://datmail.datametric-dsi.com/api/emails/"
 
+        try:
+            # Hacemos la petición a la API con un timeout prudente
+            response = requests.get(url, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+
+                # Validamos que sea una lista
+                if isinstance(data, list) and len(data) > 0:
+                    # Tomamos los últimos 5 correos (asumiendo que la lista crece al final)
+                    # Si quieres los primeros 5, cambia a data[:5]
+                    ultimos_5 = data[-5:]
+
+                    respuesta = "📧 *Últimos 5 Correos Recibidos:*\n"
+
+                    for email in reversed(ultimos_5):  # Invertimos para ver el más nuevo arriba
+                        sender = email.get('sender', 'Desconocido')
+                        subject = email.get('subject', '(Sin asunto)')
+                        # Construimos la ficha del correo
+                        respuesta += f"\n📨 *De:* {sender}\n📝 *Asunto:* {subject}\n────────────────"
+
+                    return respuesta
+                else:
+                    return "📭 No hay correos recientes en la bandeja."
+            else:
+                return f"⚠️ Error consultando el servidor de correos (Código: {response.status_code})."
+
+        except Exception as e:
+            print(f"❌ Error API Correos: {e}")
+            return "⚠️ No pude conectar con el servidor de correos en este momento."
     # 1. RESPUESTA POR DEFECTO / REGLAS SIMPLES
     # Esto garantiza una respuesta rápida sin depender de la IA
     saludos = ['hola', 'buenos dias', 'buenas tardes', 'inicio', 'menu']
