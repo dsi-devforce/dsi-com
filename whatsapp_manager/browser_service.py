@@ -179,20 +179,25 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
             driver = iniciar_navegador()
             print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
             try:
-                # 1. BUSQUEDA DEL INPUT
-                # Buscamos especificamente el textbox editable
-                xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
-                wait = WebDriverWait(driver, 10)
-                caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
-                # --- DIAGNÓSTICO SOLICITADO ---
-                # Imprimimos el HTML del elemento encontrado para verificar que es el correcto
-                print(f"   🔍 Elemento encontrado: {caja_texto.get_attribute('outerHTML')[:150]}...")
+                # 1. BUSQUEDA DEL INPUT (CORREGIDO)
+                # CRÍTICO: Usamos //footer para asegurarnos de que es la caja de chat
+                # y NO el buscador de contactos (que está en el panel lateral).
+                xpath_input = '//footer//div[@contenteditable="true"][@role="textbox"]'
 
-                # Guardamos el HTML completo de la página en un archivo para análisis profundo
-                with open("/app/debug_page.html", "w", encoding="utf-8") as f:
-                    f.write(driver.page_source)
-                print("   📄 HTML completo guardado en '/app/debug_page.html'")
-                # ------------------------------
+                wait = WebDriverWait(driver, 10)
+                try:
+                    caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
+                except:
+                    print("   ⚠️ No se encontró el input en el footer. Intentando selectores alternativos...")
+                    # Fallback: Buscamos por atributos específicos de la caja de mensaje (data-tab suele ser 10)
+                    # Esto funciona independiente del idioma (Type a message / Escribe un mensaje)
+                    xpath_alt = '//div[@contenteditable="true"][@data-tab]'
+                    caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_alt)))
+
+                # --- DIAGNÓSTICO RÁPIDO ---
+                label = caja_texto.get_attribute('aria-label') or "Sin label"
+                print(f"   ✅ Elemento seleccionado: {caja_texto.tag_name} (Label: {label})")
+                # --------------------------
 
                 driver.execute_script("arguments[0].focus();", caja_texto)
                 time.sleep(0.2)
