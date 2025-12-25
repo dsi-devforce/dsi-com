@@ -53,7 +53,7 @@ def cerebro_ia(texto, remitente):
     # 2. INTENTO DE IA (OLLAMA)
     # Si tienes Ollama corriendo, esto funcionará. Si no, pasamos al fallback.
     try:
-        # return call_ollama_ai(texto, "Eres un asistente útil.") # Descomenta si usas Ollama
+        return call_ollama_ai(texto, "Eres un asistente útil.") # Descomenta si usas Ollama
         pass
     except:
         pass
