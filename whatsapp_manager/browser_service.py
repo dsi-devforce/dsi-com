@@ -3,6 +3,7 @@ import shutil
 import os
 import time
 import logging
+import re
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -293,25 +294,73 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 # Leer mensajes
                 # Buscamos burbujas de mensaje entrante
-                msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in span.selectable-text")
+                #msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in span.selectable-text")
 
-                if not msgs:
+                #if not msgs:
                     # Intento alternativo por si cambió la clase
-                    msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+                #    msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
 
-                if not msgs:
-                    print("❌ No pude leer el texto del mensaje.")
+                #if not msgs:
+                #    print("❌ No pude leer el texto del mensaje.")
+                #    webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                #    return False
+
+                # Tomamos el texto del último mensaje
+                #texto = msgs[-1].text.split('\n')[0]
+
+                # Intentamos sacar el nombre
+                #try:
+                #    nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                #except:
+                #    nombre = "Usuario"
+
+                #print(f"📩 {nombre}: {texto}")
+
+                #if texto:
+                #    respuesta = callback_inteligencia(texto, nombre)
+                msgs_containers = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+
+                if not msgs_containers:
+                    print("❌ No se encontraron mensajes entrantes visibles.")
                     webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
                     return False
 
-                # Tomamos el texto del último mensaje
-                texto = msgs[-1].text.split('\n')[0]
+                # Trabajamos EXCLUSIVAMENTE sobre el último contenedor de mensaje
+                last_msg_container = msgs_containers[-1]
 
-                # Intentamos sacar el nombre
+                # 1. Extracción del TEXTO (Scoped)
                 try:
-                    nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                    # Buscamos el span de texto SOLO dentro del último contenedor
+                    element_texto = last_msg_container.find_element(By.CSS_SELECTOR, "span.selectable-text")
+                    texto = element_texto.text
                 except:
-                    nombre = "Usuario"
+                    # Fallback: Si no hay selectable-text (ej: solo emojis), tomamos el texto crudo
+                    texto = last_msg_container.text.split('\n')[0]
+
+                # 2. Extracción del NOMBRE (Soporte para Grupos)
+                nombre = "Desconocido"
+                try:
+                    # WhatsApp incluye un atributo 'data-pre-plain-text' en el div 'copyable-text'
+                    # Formato típico: "[10:30, 01/01/2024] Juan Perez: "
+                    # Esto identifica al remitente real incluso en grupos.
+                    elemento_meta = last_msg_container.find_element(By.CSS_SELECTOR, "div[data-pre-plain-text]")
+                    raw_data = elemento_meta.get_attribute("data-pre-plain-text")
+
+                    if raw_data:
+                        # Usamos Regex para extraer lo que está entre ']' y ':'
+                        match = re.search(r']\s(.*?):', raw_data)
+                        if match:
+                            nombre = match.group(1).strip()
+                except Exception:
+                    pass
+
+                # Fallback para chat 1 a 1 (si no se pudo sacar de la metadata)
+                if nombre == "Desconocido":
+                    try:
+                        # En chat privado, el nombre del header es válido
+                        nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                    except:
+                        nombre = "Usuario"
 
                 print(f"📩 {nombre}: {texto}")
 
