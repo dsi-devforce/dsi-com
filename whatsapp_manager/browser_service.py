@@ -89,40 +89,76 @@ def garantizar_sesion_activa():
         wait = WebDriverWait(driver, 20)
 
     print("\n🕵️ 1. VERIFICANDO ESTADO DE SESIÓN...")
+    print("   ↳ Esperando a que cargue la interfaz de WhatsApp Web...")
 
     try:
         # Esperamos a que cargue ALGO (QR o Chat)
-        elemento = wait.until(EC.any_of(
-            EC.presence_of_element_located((By.ID, "pane-side")),
-            EC.presence_of_element_located((By.TAG_NAME, "canvas"))
+        # Aumentamos un poco el timeout inicial por si la red es lenta
+        elemento = WebDriverWait(driver, 30).until(EC.any_of(
+            EC.presence_of_element_located((By.ID, "pane-side")),  # Panel de chats (Login OK)
+            EC.presence_of_element_located((By.TAG_NAME, "canvas")),  # Lienzo del QR (Falta Login)
+            EC.presence_of_element_located((By.CSS_SELECTOR, "div[data-ref]"))  # QR contenedor (Alternativo)
         ))
 
-        # ESCENARIO A: YA ESTAMOS DENTRO
+        # ESCENARIO A: YA ESTAMOS DENTRO (Detectamos el panel lateral de chats)
         if elemento.get_attribute("id") == "pane-side":
-            print("✅ Sesión encontrada. Iniciando robot.")
+            print("   ✅ ¡ÉXITO! Panel de chats detectado.")
+            print("   ✅ Sesión recuperada correctamente. Iniciando robot.")
             return True
 
-        # ESCENARIO B: NECESITAMOS ESCANEAR (Secuencia de espera)
-        print("⚠️ No se detectó sesión. Se requiere vinculación.")
-        print("📸 Generando QR en '/app/qr_login.png'...")
-        time.sleep(1)
+        # ESCENARIO B: NECESITAMOS ESCANEAR (Detectamos el QR)
+        print("   ⚠️ No se detectó sesión activa.")
+        print("   👀 Se detectó el código QR en pantalla.")
+        print("   📸 Generando captura del QR en '/app/qr_login.png'...")
+
+        time.sleep(1)  # Pequeña pausa para asegurar renderizado completo del QR
         driver.save_screenshot("/app/qr_login.png")
-        print("👉 EJECUTA EN OTRA TERMINAL: docker cp com-web-1:/app/qr_login.png ./qr_login.png")
-        print("⏳ Esperando a que escanees el código...")
+
+        print("   💾 Captura guardada.")
+        print("   👉 ACCIÓN REQUERIDA: Escanea el código QR desde tu celular.")
+        print("   ⏳ El sistema está esperando a que el QR desaparezca y carguen los chats...")
 
         # Aquí el código SE PAUSA hasta que detecte que escaneaste
-        # Timeout largo de 5 minutos (300 segundos)
-        WebDriverWait(driver, 300).until(EC.presence_of_element_located((By.ID, "pane-side")))
+        # Usamos un bucle con feedback visual para no dejar la consola "congelada" sin saber qué pasa
+        start_time = time.time()
+        timeout = 300  # 5 minutos
 
-        print("\n🎉 ¡VINCULACIÓN DETECTADA!")
-        print("💾 Guardando cookies y sesión en disco...")
-        time.sleep(5)  # CRÍTICO: Esperar a que WhatsApp guarde los datos localmente
+        while time.time() - start_time < timeout:
+            try:
+                # Intentamos buscar el panel de chats brevemente (1 segundo)
+                WebDriverWait(driver, 1).until(EC.presence_of_element_located((By.ID, "pane-side")))
+                break  # ¡Lo encontró! Salimos del bucle
+            except:
+                # Si no lo encuentra, imprime un punto y sigue esperando
+                print(".", end="", flush=True)
+                time.sleep(2)
+
+        # Verificamos si salió por timeout o por éxito
+        if time.time() - start_time >= timeout:
+            print("\n   ❌ Tiempo de espera agotado (5 min). Reinicia el proceso.")
+            return False
+
+        print("\n   🎉 ¡VINCULACIÓN DETECTADA!")
+        print("   📥 Descargando base de datos de chats inicial...")
+        print("   💾 Guardando cookies y sesión localmente...")
+
+        # CRÍTICO: Esperar a que WhatsApp termine de indexar y guardar en IndexedDB
+        for i in range(5, 0, -1):
+            print(f"   ⏳ Estabilizando sesión en {i}s...", end="\r")
+            time.sleep(1)
+        print("\n   ✅ Sesión estabilizada y guardada.")
+
         return True
 
     except Exception as e:
-        print(f"❌ Error fatal verificando sesión: {e}")
+        print(f"\n❌ Error fatal verificando sesión: {e}")
+        # Intentamos sacar un screenshot del error para debug
+        try:
+            driver.save_screenshot("/app/debug_error_sesion.png")
+            print("   📸 Se guardó una captura del error en '/app/debug_error_sesion.png'")
+        except:
+            pass
         return False
-
 
 def imprimir_resumen_chats():
     """Imprime los últimos chats para confirmar visualmente al usuario"""
