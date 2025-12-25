@@ -192,48 +192,89 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
         except:
             return False
 
-
 def procesar_nuevos_mensajes(callback_inteligencia):
-    try:
-        with driver_lock:
-            driver = iniciar_navegador()
+        try:
+            with driver_lock:
+                driver = iniciar_navegador()
+                wait = WebDriverWait(driver, 5)
 
-            # Busca burbujas verdes
-            xpath_indicadores = '//div[@id="pane-side"]//span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
-            indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
+                # Busca burbujas verdes (indicadores de no leídos)
+                # Usamos una estrategia más amplia para capturar el indicador
+                xpath_indicadores = '//div[@id="pane-side"]//span[contains(@aria-label, "unread") or contains(@aria-label, "no leído")]'
 
-            if not indicadores: return False
+                # Buscamos elementos pero sin esperar demasiado para no bloquear
+                indicadores = driver.find_elements(By.XPATH, xpath_indicadores)
 
-            print(f"\n🔔 Mensaje nuevo detectado.")
-            indicador = indicadores[0]
-            # Click en el chat
-            indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]').click()
-            time.sleep(2)
+                if not indicadores:
+                    return False
 
-            # Leer
-            msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
-            if not msgs: return False
+                print(f"\n🔔 Mensaje nuevo detectado ({len(indicadores)} pendientes).")
+                indicador = indicadores[0]
 
-            texto = msgs[-1].text.split('\n')[0]
-            try:
-                nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
-            except:
-                nombre = "Desconocido"
+                # --- CORRECCIÓN DE ESTABILIDAD ---
+                # Intentamos subir por el árbol DOM hasta encontrar el elemento clickeable del chat
+                # En lugar de asumir que es el padre directo, buscamos el ancestro con role="listitem"
+                try:
+                    chat_element = indicador.find_element(By.XPATH, './ancestor::div[@role="listitem"]')
+                except:
+                    # Fallback: Si no encuentra listitem, intenta hacer click en el indicador mismo
+                    # (a veces funciona si el indicador absorbe el click)
+                    print("⚠️ No se encontró el contenedor 'listitem', intentando click directo...")
+                    chat_element = indicador
 
-            print(f"📩 {nombre}: {texto}")
+                # Scroll al elemento para asegurar que sea visible y clickeable
+                driver.execute_script("arguments[0].scrollIntoView(true);", chat_element)
+                time.sleep(0.5)  # Pequeña pausa visual
 
-            if texto:
-                respuesta = callback_inteligencia(texto, nombre)
-                if respuesta:
-                    print(f"🤖 Respondiendo...")
-                    enviar_mensaje_browser(nombre, respuesta)
+                try:
+                    chat_element.click()
+                except Exception as e:
+                    # Si el click normal falla, usamos Javascript (infalible)
+                    print(f"⚠️ Click normal falló, forzando click JS...")
+                    driver.execute_script("arguments[0].click();", chat_element)
 
-            webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
-            return True
+                time.sleep(2)  # Esperar a que abra el chat
 
-    except Exception as e:
-        print(f"⚠️ Error leve: {e}")
-        return False
+                # Leer mensajes
+                # Buscamos burbujas de mensaje entrante
+                msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in span.selectable-text")
+
+                if not msgs:
+                    # Intento alternativo por si cambió la clase
+                    msgs = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
+
+                if not msgs:
+                    print("❌ No pude leer el texto del mensaje.")
+                    webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+                    return False
+
+                # Tomamos el texto del último mensaje
+                texto = msgs[-1].text.split('\n')[0]
+
+                # Intentamos sacar el nombre
+                try:
+                    nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
+                except:
+                    nombre = "Usuario"
+
+                print(f"📩 {nombre}: {texto}")
+
+                if texto:
+                    respuesta = callback_inteligencia(texto, nombre)
+                    if respuesta:
+                        print(f"🤖 Respondiendo...")
+                        enviar_mensaje_browser(nombre, respuesta)
+
+                # Salimos del chat para volver a la lista (Tecla ESC)
+                webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
+
+                # Pausa para que la interfaz vuelva a la lista
+                time.sleep(1)
+                return True
+
+        except Exception as e:
+            print(f"⚠️ Error leve procesando mensaje: {e}")
+            return False
 
 
 # --- FUNCIÓN MAESTRA (LA QUE PIDE TU LÓGICA) ---
