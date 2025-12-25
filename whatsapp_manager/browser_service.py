@@ -194,45 +194,50 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
                 print("   📄 HTML completo guardado en '/app/debug_page.html'")
                 # ------------------------------
 
-                # 2. LIMPIEZA Y FOCO
-                driver.execute_script("arguments[0].focus();", caja_texto)
-                time.sleep(0.2)
+            driver.execute_script("arguments[0].focus();", caja_texto)
+            time.sleep(0.2)
 
-                # 3. ESCRITURA ROBUSTA (SOLUCIÓN)
-                # En lugar de send_keys (que a veces no activa el botón), usamos execCommand.
-                # Esto simula un pegado o escritura nativa del navegador.
-                driver.execute_script(
-                    f"document.execCommand('insertText', false, {json.dumps(mensaje)});"
-                )
+            # 3. ESCRITURA NUCLEAR (Dispara todos los eventos posibles)
+            # Esta función JS simula que el usuario escribió, disparando eventos que React escucha.
+            script_escritura = """
+                           var element = arguments[0];
+                           var text = arguments[1];
 
-                # Forzamos un evento de input extra para despertar a React si execCommand falló
-                driver.execute_script(
-                    "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
-                    caja_texto
-                )
+                           // Método 1: execCommand (Legacy pero efectivo)
+                           document.execCommand('insertText', false, text);
 
-                time.sleep(0.5)
+                           // Método 2: Manipulación directa + Eventos (Fallback moderno)
+                           if (element.textContent !== text) {
+                               element.innerHTML = text.replace(/\\n/g, '<br>');
 
-                # 4. ENVÍO
-                # Intentamos Enter
+                               var eventInput = new Event('input', { bubbles: true });
+                               element.dispatchEvent(eventInput);
+
+                               var eventChange = new Event('change', { bubbles: true });
+                               element.dispatchEvent(eventChange);
+                           }
+                           """
+            driver.execute_script(script_escritura, caja_texto, mensaje)
+
+            print("   ⌨️ Texto inyectado. Esperando validación de UI...")
+            time.sleep(1)  # Esperamos a que el icono de Micrófono cambie a Avión
+
+            # 4. ENVÍO (Click en el botón que APARECIÓ)
+            try:
+                # Buscamos el botón SEND explícitamente.
+                # El span data-icon="send" solo aparece si hay texto valido.
+                boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
+                boton_enviar.click()
+                print(f"   👉 Click en botón 'Enviar' (Avión) realizado.")
+            except:
+                # Si no aparece el avión, intentamos Enter como fallback
+                print(f"   ⚠️ No apareció el botón de enviar. Intentando Enter...")
                 caja_texto.send_keys(Keys.ENTER)
-                time.sleep(0.5)
 
-                # Intentamos Click en botón (Plan B)
-                # Buscamos el botón de enviar que NO esté deshabilitado
-                try:
-                    boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
-                    driver.execute_script("arguments[0].click();", boton_enviar)
-                    print("   👉 Click en botón 'Enviar' realizado.")
-                except:
-                    pass
+            print(f"   📤 ¡Mensaje enviado exitosamente!")
+            return True
 
-                print(f"   📤 ¡Mensaje enviado exitosamente!")
-                return True
 
-            except Exception as e:
-                print(f"   ❌ ERROR enviando mensaje: {e}")
-                return False
 def procesar_nuevos_mensajes(callback_inteligencia):
         try:
             with driver_lock:
