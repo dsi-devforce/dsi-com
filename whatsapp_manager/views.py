@@ -27,10 +27,39 @@ from . import browser_service
 # Variable global para controlar que no arranques 2 veces el bot
 bot_thread = None
 
-def cerebro_ia(texto, remitente):
-    # Aquí iría tu lógica real de IA
-    return f"🤖 (Auto): {texto}"
 
+def cerebro_ia(texto, remitente):
+    """
+    Función principal de decisión.
+    """
+    texto = texto.lower().strip()
+    print(f"🧠 CEREBRO: Analizando '{texto}' de {remitente}")
+
+    # 1. RESPUESTA POR DEFECTO / REGLAS SIMPLES
+    # Esto garantiza una respuesta rápida sin depender de la IA
+    saludos = ['hola', 'buenos dias', 'buenas tardes', 'inicio', 'menu']
+
+    if any(s in texto for s in saludos):
+        return (
+            "👋 *¡Hola! Soy el asistente virtual de DSI-COM.*\n\n"
+            "Estoy operativo y listo para ayudarte.\n"
+            "Puedes preguntarme sobre:\n"
+            "🔹 *Precios* y Servicios\n"
+            "🔹 *Soporte* Técnico\n"
+            "🔹 O simplemente charlar con mi IA.\n\n"
+            "_¿En qué te ayudo hoy?_"
+        )
+
+    # 2. INTENTO DE IA (OLLAMA)
+    # Si tienes Ollama corriendo, esto funcionará. Si no, pasamos al fallback.
+    try:
+        # return call_ollama_ai(texto, "Eres un asistente útil.") # Descomenta si usas Ollama
+        pass
+    except:
+        pass
+
+    # 3. FALLBACK (Si todo lo demás falla)
+    return f"🤖 (Auto-Reply): Recibí tu mensaje: '{texto}'. (Configura la IA para respuestas más complejas)"
 @csrf_exempt
 def iniciar_bot_background(request):
     global bot_thread

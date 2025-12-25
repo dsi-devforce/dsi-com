@@ -177,20 +177,39 @@ def imprimir_resumen_chats():
 def enviar_mensaje_browser(nombre_contacto, mensaje):
     with driver_lock:
         driver = iniciar_navegador()
+        print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
+
         try:
-            xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
+            # Estrategia 1: Buscar caja de texto enfocada o el footer
+            xpath_input = '//footer//div[@contenteditable="true"][@role="textbox"]'
+
             wait = WebDriverWait(driver, 10)
             caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
+
+            # Asegurar foco
             caja_texto.click()
+            time.sleep(0.5)
+
+            # Escribir línea por línea
             for linea in mensaje.split('\n'):
                 caja_texto.send_keys(linea)
-                caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)
+                caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)  # Salto de línea
+
             time.sleep(0.5)
-            caja_texto.send_keys(Keys.ENTER)
-            time.sleep(1)
+            caja_texto.send_keys(Keys.ENTER)  # ENVIAR
+
+            print(f"   📤 ¡Mensaje enviado exitosamente!")
             return True
-        except:
-            return False
+        except Exception as e:
+            print(f"   ❌ ERROR enviando mensaje: {e}")
+            # Intentar estrategia de emergencia con JS si falla Selenium
+            try:
+                driver.execute_script("arguments[0].innerHTML = arguments[1];", caja_texto, mensaje)
+                caja_texto.send_keys(Keys.ENTER)
+                print("   ⚠️ Enviado vía inyección JS (Fallback).")
+                return True
+            except:
+                return False
 
 def procesar_nuevos_mensajes(callback_inteligencia):
         try:
@@ -261,9 +280,12 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 if texto:
                     respuesta = callback_inteligencia(texto, nombre)
+
                     if respuesta:
-                        print(f"🤖 Respondiendo...")
+                        print(f"🤖 Respuesta generada: {respuesta[:30]}...")
                         enviar_mensaje_browser(nombre, respuesta)
+                    else:
+                        print("😶 El cerebro decidió no responder.")
 
                 # Salimos del chat para volver a la lista (Tecla ESC)
                 webdriver.ActionChains(driver).send_keys(Keys.ESCAPE).perform()
@@ -277,17 +299,13 @@ def procesar_nuevos_mensajes(callback_inteligencia):
             return False
 
 
-# --- FUNCIÓN MAESTRA (LA QUE PIDE TU LÓGICA) ---
 def iniciar_bucle_bot(callback_ia):
     """
     Esta función encapsula TODO el proceso:
-    1. Arranca Chrome.
-    2. Si no hay sesión, ESPERA a que escanees.
-    3. Una vez logueado, entra al bucle infinito.
     """
     print("🚀 SISTEMA DE BOT INICIADO")
 
-    # 1. Fase de Garantía de Sesión (Bloqueante hasta tener éxito)
+    # 1. Fase de Garantía de Sesión
     if not garantizar_sesion_activa():
         print("❌ Fallo crítico al intentar iniciar sesión.")
         return
@@ -297,13 +315,21 @@ def iniciar_bucle_bot(callback_ia):
 
     # 3. Fase de Ejecución (Bucle Infinito)
     print("✅ ROBOT OPERATIVO Y ESCUCHANDO...")
+    print("   (Presiona Ctrl+C en la terminal para detener)")
+
+    iteracion = 0
     try:
         while True:
-            print(".", end="", flush=True)
+            # Feedback visual de que el proceso sigue vivo
+            iteracion += 1
+            if iteracion % 6 == 0:  # Imprime cada ~30 segundos para no saturar
+                print(f"   ♻️ Escaneando mensajes... ({time.strftime('%H:%M:%S')})")
+
             procesar_nuevos_mensajes(callback_ia)
             time.sleep(5)
+
     except KeyboardInterrupt:
-        print("\n🛑 Detenido.")
+        print("\n🛑 Detenido por usuario.")
 
 def obtener_qr_screenshot():
     """
