@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Singleton del driver
 driver_instance = None
-driver_lock = threading.Lock()
+driver_lock = threading.RLock()
 
 def iniciar_navegador():
     """
