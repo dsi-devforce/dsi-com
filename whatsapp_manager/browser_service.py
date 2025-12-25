@@ -264,46 +264,45 @@ def iniciar_bucle_bot(callback_ia):
     except KeyboardInterrupt:
         print("\n🛑 Detenido.")
 
-    def obtener_qr_screenshot():
-        """
-        Función usada por la VISTA WEB (views.py) para obtener el QR.
-        Retorna (base64_image, status_text)
-        """
-        # Intentamos adquirir el candado pero SIN BLOQUEAR.
-        # Si el bot está trabajando (escribiendo/leyendo), le decimos a la web que espere.
-        if not driver_lock.acquire(blocking=False):
-            return None, "BOT_OCUPADO"
+def obtener_qr_screenshot():
+    """
+    Función usada por la VISTA WEB (views.py) para obtener el QR.
+    Retorna (base64_image, status_text)
+    """
+    # Intentamos adquirir el candado pero SIN BLOQUEAR.
+    # Si el bot está trabajando (escribiendo/leyendo), le decimos a la web que espere.
+    if not driver_lock.acquire(blocking=False):
+       return None, "BOT_OCUPADO"
 
+    try:
+        driver = iniciar_navegador()
+        # Reducimos el wait para que la web sea ágil
+        wait = WebDriverWait(driver, 5)
+
+        # 1. ¿Ya estamos vinculados?
         try:
-            driver = iniciar_navegador()
-            # Reducimos el wait para que la web sea ágil
-            wait = WebDriverWait(driver, 5)
+        # Buscamos el panel lateral de chats
+            wait.until(EC.presence_of_element_located((By.ID, "pane-side")))
 
-            # 1. ¿Ya estamos vinculados?
-            try:
-                # Buscamos el panel lateral de chats
-                wait.until(EC.presence_of_element_located((By.ID, "pane-side")))
-
-                # --- CORRECCIÓN CRÍTICA ---
-                # Eliminamos garantizar_sesion_activa() de aquí.
-                # La vista web solo debe detectar el estado, NO debe ejecutar la lógica
-                # de estabilización (sleeps) ni impresiones de consola del bot.
-
-                return None, "YA_VINCULADO"
-            except:
-                pass  # Si no encuentra pane-side, sigue buscando QR
+        # --- CORRECCIÓN CRÍTICA ---
+        # Eliminamos garantizar_sesion_activa() de aquí.
+        # La vista web solo debe detectar el estado, NO debe ejecutar la lógica
+        # de estabilización (sleeps) ni impresiones de consola del bot.
+            return None, "YA_VINCULADO"
+        except:
+              pass  # Si no encuentra pane-side, sigue buscando QR
 
             # 2. ¿Hay QR?
-            try:
-                print("📸 Buscando QR para la web...")
-                qr_canvas = wait.until(EC.presence_of_element_located((By.TAG_NAME, "canvas")))
-                time.sleep(1)  # Esperar renderizado
-                return qr_canvas.screenshot_as_base64, "ESPERANDO_ESCANEO"
-            except:
-                return None, "CARGANDO"  # Aún no carga ni QR ni Chats
+        try:
+            print("📸 Buscando QR para la web...")
+            qr_canvas = wait.until(EC.presence_of_element_located((By.TAG_NAME, "canvas")))
+            time.sleep(1)  # Esperar renderizado
+            return qr_canvas.screenshot_as_base64, "ESPERANDO_ESCANEO"
+        except:
+              return None, "CARGANDO"  # Aún no carga ni QR ni Chats
 
-        except Exception as e:
-            print(f"❌ Error obteniendo QR: {e}")
-            return None, "ERROR"
-        finally:
-            driver_lock.release()
+    except Exception as e:
+        print(f"❌ Error obteniendo QR: {e}")
+        return None, "ERROR"
+    finally:
+         driver_lock.release()
