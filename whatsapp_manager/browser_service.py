@@ -290,7 +290,7 @@ def procesar_nuevos_mensajes(callback_inteligencia):
                     print(f"⚠️ Click normal falló, forzando click JS...")
                     driver.execute_script("arguments[0].click();", chat_element)
 
-                time.sleep(2)  # Esperar a que abra el chat
+                #time.sleep(2)  # Esperar a que abra el chat
 
                 # Leer mensajes
                 # Buscamos burbujas de mensaje entrante
@@ -318,6 +318,9 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 #if texto:
                 #    respuesta = callback_inteligencia(texto, nombre)
+                time.sleep(2)  # Esperar a que abra el chat
+
+                # Leer mensajes
                 msgs_containers = driver.find_elements(By.CSS_SELECTOR, "div.message-in")
 
                 if not msgs_containers:
@@ -327,38 +330,62 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 # Trabajamos EXCLUSIVAMENTE sobre el último contenedor de mensaje
                 last_msg_container = msgs_containers[-1]
-                # 1. Extracción del TEXTO (Scoped)
-                try:
-                    # Buscamos el span de texto SOLO dentro del último contenedor
-                    element_texto = last_msg_container.find_element(By.CSS_SELECTOR, "span.selectable-text")
-                    print(element_texto)
-                    texto = element_texto.text
-                except:
-                    # Fallback: Si no hay selectable-text (ej: solo emojis), tomamos el texto crudo
-                    texto = last_msg_container.text.split('\n')[0]
-                    print(last_msg_container)
 
-                # 2. Extracción del NOMBRE (Soporte para Grupos)
+                texto = ""
                 nombre = "Desconocido"
-                try:
-                    # WhatsApp incluye un atributo 'data-pre-plain-text' en el div 'copyable-text'
-                    # Formato típico: "[10:30, 01/01/2024] Juan Perez: "
-                    # Esto identifica al remitente real incluso en grupos.
-                    elemento_meta = last_msg_container.find_element(By.CSS_SELECTOR, "div[data-pre-plain-text]")
-                    raw_data = elemento_meta.get_attribute("data-pre-plain-text")
 
+                # ESTRATEGIA ATÓMICA BASADA EN TU HTML:
+                # Buscamos el div 'copyable-text' que contiene 'data-pre-plain-text'.
+                # Este nodo es el PADRE del texto y el POSEEDOR del nombre.
+                try:
+                    # 1. Localizar el nodo "núcleo" del mensaje
+                    # El HTML muestra: <div class="_ahy1 copyable-text" data-pre-plain-text="...">
+                    # Usamos el atributo como ancla porque las clases (_ahy1) cambian.
+                    nucleo_mensaje = last_msg_container.find_element(By.CSS_SELECTOR, "div[data-pre-plain-text]")
+
+                    # 2. Extraer NOMBRE desde el atributo (Infalible en grupos)
+                    raw_data = nucleo_mensaje.get_attribute("data-pre-plain-text")  # Ej: [13:40, 25/12/2025] Julio:
                     if raw_data:
-                        # Usamos Regex para extraer lo que está entre ']' y ':'
                         match = re.search(r']\s(.*?):', raw_data)
                         if match:
                             nombre = match.group(1).strip()
-                except Exception:
-                    pass
 
-                # Fallback para chat 1 a 1 (si no se pudo sacar de la metadata)
+                    # 3. Extraer TEXTO (Descendiente del mismo núcleo)
+                    # El HTML muestra: <span data-testid="selectable-text" ...>Hola</span>
+                    try:
+                        # Priorizamos data-testid por ser más estable que las clases
+                        element_texto = nucleo_mensaje.find_element(By.CSS_SELECTOR,
+                                                                    "span[data-testid='selectable-text']")
+                        texto = element_texto.text
+                    except:
+                        # Fallback a la clase antigua si data-testid no existe
+                        element_texto = nucleo_mensaje.find_element(By.CSS_SELECTOR, "span.selectable-text")
+                        texto = element_texto.text
+
+                except Exception as e:
+                    # FALLBACK DE EMERGENCIA (Si la estructura atómica falla o no hay metadata)
+                    # Esto ocurre a veces en mensajes seguidos del mismo usuario donde WhatsApp agrupa visualmente
+                    try:
+                        # Intentamos sacar texto crudo del contenedor general
+                        texto = last_msg_container.text.split('\n')[0]
+
+                        # Intentamos buscar el nombre visual (encima de la burbuja en grupos)
+                        # HTML: <span dir="auto" class="_ahxt ...">Julio</span>
+                        if nombre == "Desconocido":
+                            try:
+                                # Buscamos spans con dir="auto" que suelen ser nombres de contacto
+                                elementos_nombre = last_msg_container.find_elements(By.CSS_SELECTOR, "span[dir='auto']")
+                                # Normalmente el primero es el nombre, el segundo la hora
+                                if elementos_nombre:
+                                    nombre = elementos_nombre[0].text
+                            except:
+                                pass
+                    except:
+                        pass
+
+                # Si falló todo y seguimos sin nombre en un chat 1 a 1, usamos el header
                 if nombre == "Desconocido":
                     try:
-                        # En chat privado, el nombre del header es válido
                         nombre = driver.find_element(By.XPATH, '//header//span[@dir="auto"]').text
                     except:
                         nombre = "Usuario"
