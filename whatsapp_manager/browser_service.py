@@ -327,15 +327,16 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 # Trabajamos EXCLUSIVAMENTE sobre el último contenedor de mensaje
                 last_msg_container = msgs_containers[-1]
-                print(last_msg_container)
                 # 1. Extracción del TEXTO (Scoped)
                 try:
                     # Buscamos el span de texto SOLO dentro del último contenedor
                     element_texto = last_msg_container.find_element(By.CSS_SELECTOR, "span.selectable-text")
+                    print(element_texto)
                     texto = element_texto.text
                 except:
                     # Fallback: Si no hay selectable-text (ej: solo emojis), tomamos el texto crudo
                     texto = last_msg_container.text.split('\n')[0]
+                    print(last_msg_container)
 
                 # 2. Extracción del NOMBRE (Soporte para Grupos)
                 nombre = "Desconocido"
