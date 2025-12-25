@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>🧠 Test de Cerebro Ollama</title>
+    <style>
+        body { font-family: system-ui, sans-serif; background: #222; color: #eee; padding: 40px; }
+        .container { max-width: 800px; margin: 0 auto; background: #333; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        h1 { color: #00d2ff; margin-top: 0; }
+        .config-info { background: #444; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 0.9em; margin-bottom: 20px; border: 1px solid #555; }
+        label { display: block; margin-bottom: 8px; font-weight: bold; }
+        textarea { width: 100%; height: 100px; padding: 10px; background: #222; color: #fff; border: 1px solid #555; border-radius: 5px; box-sizing: border-box; resize: vertical; }
+        button { background: #00d2ff; color: #000; font-weight: bold; border: none; padding: 12px 25px; border-radius: 5px; cursor: pointer; margin-top: 15px; font-size: 16px; transition: 0.2s; }
+        button:hover { background: #33e0ff; transform: scale(1.02); }
+
+        .result-box { margin-top: 30px; padding: 20px; border-radius: 8px; animation: fadeIn 0.5s; }
+        .success { background: #1b3a26; border: 1px solid #2e6b40; }
+        .error { background: #3a1b1b; border: 1px solid #6b2e2e; }
+        .meta { font-size: 0.8em; color: #aaa; margin-top: 10px; text-align: right; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🧠 Diagnóstico de IA (Ollama)</h1>
+
+    <div class="config-info">
+        <div><strong>URL Destino:</strong> {{ api_url }}</div>
+        <div><strong>Modelo:</strong> {{ model }}</div>
+    </div>
+
+    <form method="post">
+        {% csrf_token %}
+        <label>Prompt de prueba:</label>
+        <textarea name="prompt" placeholder="Ej: Hola, ¿cuánto es 2 + 2?">{{ prompt }}</textarea>
+        <button type="submit">Enviar al Cerebro 🚀</button>
+        <a href="{% url 'dashboard' %}" style="color: #aaa; text-decoration: none; margin-left: 15px;">Volver</a>
+    </form>
+
+    {% if response %}
+        <div class="result-box success">
+            <h3>🤖 Respuesta:</h3>
+            <p style="white-space: pre-wrap;">{{ response }}</p>
+            <div class="meta">⏱️ Tiempo de respuesta: {{ duration }}s</div>
+        </div>
+    {% endif %}
+
+    {% if error %}
+        <div class="result-box error">
+            <h3>⚠️ Fallo de Conexión:</h3>
+            <p style="white-space: pre-wrap;">{{ error }}</p>
+            <div class="meta">⏱️ Falló en: {{ duration }}s</div>
+        </div>
+    {% endif %}
+</div>
+
+</body>
+</html>

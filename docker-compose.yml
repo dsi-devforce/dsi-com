@@ -25,7 +25,7 @@ services:
       - POSTGRES_DB=dsi_com_db
       - POSTGRES_USER=dsi_user
       - POSTGRES_PASSWORD=dsi1212A
-      - OLLAMA_HOST=http://host.docker.internal:11434/api/generate
+      - OLLAMA_HOST=http://172.17.0.1:11434/api/generate
       - DJANGO_ALLOWED_HOSTS=*
     ports:
       - "5438:5432"

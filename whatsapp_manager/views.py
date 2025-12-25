@@ -600,8 +600,10 @@ def tool_informacion_contacto():
 
 def call_ollama_ai(user_text, system_prompt):
     """
-    Envía el prompt a la instancia local de Ollama.
+    Envía el prompt a la instancia local de Ollama con mejor manejo de errores.
     """
+    logger.info(f"🔌 Conectando a Ollama en: {OLLAMA_API_URL}")
+
     try:
         payload = {
             "model": OLLAMA_MODEL,
@@ -609,24 +611,59 @@ def call_ollama_ai(user_text, system_prompt):
             "system": system_prompt,
             "stream": False,
             "options": {
-                "temperature": 0.7,  # Creatividad (0.0 a 1.0)
-                "num_predict": 200  # Limitar longitud para WhatsApp
+                "temperature": 0.7,
+                "num_predict": 200
             }
         }
 
-        # Timeout corto (10s) para no bloquear el navegador si Ollama está lento
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=20)
+        # Timeout de 30s por si el modelo es pesado cargando
+        response = requests.post(OLLAMA_API_URL, json=payload, timeout=30)
         response.raise_for_status()
 
         result = response.json()
         return result.get('response', '').strip()
 
     except requests.exceptions.ConnectionError:
-        logger.error("No se pudo conectar con Ollama. ¿Está corriendo 'ollama serve'?")
-        return "⚠️ Error: Mi cerebro de IA está desconectado en este momento."
+        error_msg = (
+            f"⚠️ Error de Conexión: No puedo ver a Ollama en '{OLLAMA_API_URL}'.\n"
+            "Si estás en Docker, asegúrate de usar 'host.docker.internal' o la IP de tu red local, no 'localhost'."
+        )
+        logger.error(error_msg)
+        return error_msg
     except Exception as e:
-        logger.error(f"Error en Ollama: {e}")
-        return "⚠️ Ocurrió un error procesando tu respuesta."
+        logger.error(f"❌ Error en Ollama: {e}")
+        return f"⚠️ Error interno IA: {str(e)}"
+
+
+def test_ollama_connection(request):
+    """
+    Vista visual para probar la conexión con la IA sin usar WhatsApp.
+    """
+    context = {
+        'api_url': OLLAMA_API_URL,
+        'model': OLLAMA_MODEL,
+        'response': None,
+        'duration': 0,
+        'error': None
+    }
+
+    if request.method == 'POST':
+        prompt = request.POST.get('prompt')
+        start_time = time.time()
+
+        # Llamada real
+        respuesta = call_ollama_ai(prompt, "Eres un asistente de pruebas conciso.")
+
+        end_time = time.time()
+        context['duration'] = round(end_time - start_time, 2)
+        context['prompt'] = prompt
+
+        if "⚠️" in respuesta:
+            context['error'] = respuesta
+        else:
+            context['response'] = respuesta
+
+    return render(request, 'whatsapp_manager/ollama_test.html', context)
 
 
 def debug_browser_html(request):

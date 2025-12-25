@@ -14,5 +14,7 @@ urlpatterns = [
     path('browser/vincular/', views.vincular_navegador, name='vincular_navegador'),
     path('iniciar-bot/', views.iniciar_bot_background, name='start_bot'),
     path('estado-bot/', views.estado_bot, name='status_bot'),
-path('browser/debug/', views.debug_browser_html, name='debug_browser_html'),
+    path('browser/debug/', views.debug_browser_html, name='debug_browser_html'),
+    path('test-ai/', views.test_ollama_connection, name='test_ollama'),
+
 ]
