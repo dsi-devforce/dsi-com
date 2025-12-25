@@ -1,3 +1,4 @@
+import json
 import shutil
 import os
 import time
@@ -179,62 +180,61 @@ def enviar_mensaje_browser(nombre_contacto, mensaje):
             print(f"   ⌨️ Intentando escribir a: {nombre_contacto}...")
 
             try:
-                # --- ESTRATEGIA MEJORADA DE SELECTORES ---
-                # Buscamos la caja de texto editable por sus atributos, sin depender del footer
+                # 1. BUSQUEDA DEL INPUT
+                # Buscamos especificamente el textbox editable
                 xpath_input = '//div[@contenteditable="true"][@role="textbox"]'
-
                 wait = WebDriverWait(driver, 10)
-
-                # Esperamos a que sea visible Y clickeable
                 caja_texto = wait.until(EC.element_to_be_clickable((By.XPATH, xpath_input)))
 
-                # 1. Limpieza y Foco (Click JS es más seguro aquí)
-                driver.execute_script("arguments[0].click();", caja_texto)
-                caja_texto.clear()
+                # --- DIAGNÓSTICO SOLICITADO ---
+                # Imprimimos el HTML del elemento encontrado para verificar que es el correcto
+                print(f"   🔍 Elemento encontrado: {caja_texto.get_attribute('outerHTML')[:150]}...")
+
+                # Guardamos el HTML completo de la página en un archivo para análisis profundo
+                with open("/app/debug_page.html", "w", encoding="utf-8") as f:
+                    f.write(driver.page_source)
+                print("   📄 HTML completo guardado en '/app/debug_page.html'")
+                # ------------------------------
+
+                # 2. LIMPIEZA Y FOCO
+                driver.execute_script("arguments[0].focus();", caja_texto)
+                time.sleep(0.2)
+
+                # 3. ESCRITURA ROBUSTA (SOLUCIÓN)
+                # En lugar de send_keys (que a veces no activa el botón), usamos execCommand.
+                # Esto simula un pegado o escritura nativa del navegador.
+                driver.execute_script(
+                    f"document.execCommand('insertText', false, {json.dumps(mensaje)});"
+                )
+
+                # Forzamos un evento de input extra para despertar a React si execCommand falló
+                driver.execute_script(
+                    "arguments[0].dispatchEvent(new Event('input', { bubbles: true }));",
+                    caja_texto
+                )
+
                 time.sleep(0.5)
 
-                # 2. Escribir el mensaje (Simulando tipeo humano para evitar bloqueos)
-                # Usamos clipboard o send_keys directo. Aquí send_keys es más seguro.
-                for linea in mensaje.split('\n'):
-                    caja_texto.send_keys(linea)
-                    caja_texto.send_keys(Keys.SHIFT + Keys.ENTER)  # Salto de línea
-                    time.sleep(0.1)  # Pequeña pausa entre líneas
-
-                time.sleep(0.5)
-
-                # 3. ENVIAR (Dos métodos para asegurar)
+                # 4. ENVÍO
+                # Intentamos Enter
                 caja_texto.send_keys(Keys.ENTER)
+                time.sleep(0.5)
 
-                # Si el Enter no funciona, buscamos el botón de enviar visual
+                # Intentamos Click en botón (Plan B)
+                # Buscamos el botón de enviar que NO esté deshabilitado
                 try:
                     boton_enviar = driver.find_element(By.XPATH, '//span[@data-icon="send"]/ancestor::button')
-                    boton_enviar.click()
+                    driver.execute_script("arguments[0].click();", boton_enviar)
+                    print("   👉 Click en botón 'Enviar' realizado.")
                 except:
-                    pass  # Si no encuentra el botón, confiamos en el Enter anterior
+                    pass
 
                 print(f"   📤 ¡Mensaje enviado exitosamente!")
                 return True
 
             except Exception as e:
                 print(f"   ❌ ERROR enviando mensaje: {e}")
-
-                # --- ESTRATEGIA DE EMERGENCIA (Javascript puro) ---
-                try:
-                    # Inyectamos el texto directamente en el DOM y disparamos evento de cambio
-                    script = """
-                    var elm = arguments[0];
-                    elm.innerHTML = arguments[1];
-                    elm.dispatchEvent(new Event('input', {bubbles: true}));
-                    """
-                    driver.execute_script(script, caja_texto, mensaje.replace('\n', '<br>'))
-                    time.sleep(0.5)
-                    caja_texto.send_keys(Keys.ENTER)
-                    print("   ⚠️ Enviado vía inyección JS (Fallback).")
-                    return True
-                except Exception as e2:
-                    print(f"   ❌ Falló también el intento de emergencia: {e2}")
-                    return False
-
+                return False
 def procesar_nuevos_mensajes(callback_inteligencia):
         try:
             with driver_lock:
