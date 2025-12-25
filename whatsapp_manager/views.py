@@ -1,4 +1,5 @@
 import json
+import time
 
 from django.conf import settings
 from django.contrib import messages
@@ -585,8 +586,7 @@ def vincular_navegador(request):
     }
     return render(request, 'whatsapp_manager/vincular_browser.html', context)
 
-OLLAMA_API_URL = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434/api/generate")
-OLLAMA_MODEL = "qwen2.5:3b"
+
 
 
 def tool_informacion_contacto():
@@ -597,6 +597,10 @@ def tool_informacion_contacto():
 # ==============================================================================
 # 2. CAPA DEL AGENTE (CEREBRO / AI BRAIN)
 # ==============================================================================
+DEFAULT_OLLAMA_URL = "http://172.17.0.1:11434/api/generate"
+OLLAMA_API_URL = os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_URL)
+OLLAMA_MODEL = "qwen2.5:3b"
+
 
 def call_ollama_ai(user_text, system_prompt):
     """
