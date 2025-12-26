@@ -38,7 +38,7 @@ def cerebro_ia(texto, remitente):
     # --- COMANDO #dsimail ---
     if "#dsimail" in texto:
         print("📧 Comando de correos detectado...")
-        url = "https://datmail.datametric-dsi.com/api/emails/"
+        url = "https://datmail.datametric-dsi.com/api/emails/unread/"
 
         try:
             # Hacemos la petición a la API con un timeout prudente
@@ -51,9 +51,9 @@ def cerebro_ia(texto, remitente):
                 if isinstance(data, list) and len(data) > 0:
                     # Tomamos los últimos 5 correos (asumiendo que la lista crece al final)
                     # Si quieres los primeros 5, cambia a data[:5]
-                    ultimos_5 = data[-5:]
+                    ultimos_5 = data[-10:]
 
-                    respuesta = "📧 *Últimos 5 Correos Recibidos:*\n"
+                    respuesta = "📧 *Últimos 10 Correos No Leidos Recibidos:*\n"
 
                     for email in reversed(ultimos_5):  # Invertimos para ver el más nuevo arriba
                         sender = email.get('sender', 'Desconocido')
