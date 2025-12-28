@@ -633,77 +633,75 @@ def tool_informacion_contacto():
 # ==============================================================================
 # 2. CAPA DEL AGENTE (CEREBRO / AI BRAIN)
 # ==============================================================================
-DEFAULT_OLLAMA_URL = "http://172.17.0.1:11434/api/generate"
-OLLAMA_API_URL = os.getenv("OLLAMA_HOST", DEFAULT_OLLAMA_URL)
-OLLAMA_MODEL = "qwen2.5:3b"
+
+DSI_API_URL = "https://dsi-a.datametric-dsi.com/api/chat/"
+PROVIDER_SLUG = "ollama-qwen"
 
 
 def call_ollama_ai(user_text, system_prompt):
-    """
-    Envía el prompt a la instancia local de Ollama con mejor manejo de errores.
-    """
-    logger.info(f"🔌 Conectando a Ollama en: {OLLAMA_API_URL}")
+        """
+        Envía el prompt a la API REST externa de DSI.
+        Nota: 'system_prompt' se recibe por compatibilidad, pero la API usa 'message' y 'provider_slug'.
+        """
+        logger.info(f"🔌 Conectando a API Externa en: {DSI_API_URL}")
 
-    try:
-        payload = {
-            "model": OLLAMA_MODEL,
-            "prompt": user_text,
-            "system": system_prompt,
-            "stream": False,
-            "options": {
-                "temperature": 0.7,
-                "num_predict": 200
+        try:
+            payload = {
+                "message": user_text,
+                "provider_slug": PROVIDER_SLUG
             }
-        }
 
-        # Timeout de 30s por si el modelo es pesado cargando
-        response = requests.post(OLLAMA_API_URL, json=payload, timeout=30)
-        response.raise_for_status()
+            # Timeout de 30s
+            response = requests.post(DSI_API_URL, json=payload, timeout=30)
+            response.raise_for_status()
 
-        result = response.json()
-        return result.get('response', '').strip()
+            result = response.json()
 
-    except requests.exceptions.ConnectionError:
-        error_msg = (
-            f"⚠️ Error de Conexión: No puedo ver a Ollama en '{OLLAMA_API_URL}'.\n"
-            "Si estás en Docker, asegúrate de usar 'host.docker.internal' o la IP de tu red local, no 'localhost'."
-        )
-        logger.error(error_msg)
-        return error_msg
-    except Exception as e:
-        logger.error(f"❌ Error en Ollama: {e}")
-        return f"⚠️ Error interno IA: {str(e)}"
+            # Parseamos la respuesta según la estructura:
+            # { "response": { "content": "Texto de respuesta...", ... } }
+            ai_data = result.get('response', {})
+            content = ai_data.get('content', '')
+
+            return content.strip()
+
+        except requests.exceptions.ConnectionError:
+            error_msg = f"⚠️ Error de Conexión: No puedo conectar con '{DSI_API_URL}'."
+            logger.error(error_msg)
+            return error_msg
+        except Exception as e:
+            logger.error(f"❌ Error en API IA: {e}")
+            return f"⚠️ Error externo IA: {str(e)}"
 
 
 def test_ollama_connection(request):
-    """
-    Vista visual para probar la conexión con la IA sin usar WhatsApp.
-    """
-    context = {
-        'api_url': OLLAMA_API_URL,
-        'model': OLLAMA_MODEL,
-        'response': None,
-        'duration': 0,
-        'error': None
-    }
+        """
+        Vista visual para probar la conexión con la API REST sin usar WhatsApp.
+        """
+        context = {
+            'api_url': DSI_API_URL,
+            'model': PROVIDER_SLUG,
+            'response': None,
+            'duration': 0,
+            'error': None
+        }
 
-    if request.method == 'POST':
-        prompt = request.POST.get('prompt')
-        start_time = time.time()
+        if request.method == 'POST':
+            prompt = request.POST.get('prompt')
+            start_time = time.time()
 
-        # Llamada real
-        respuesta = call_ollama_ai(prompt, "Eres un asistente de pruebas conciso.")
+            # Llamada real (el system_prompt se ignora en la nueva implementación pero se mantiene la firma)
+            respuesta = call_ollama_ai(prompt, "Eres un asistente de pruebas conciso.")
 
-        end_time = time.time()
-        context['duration'] = round(end_time - start_time, 2)
-        context['prompt'] = prompt
+            end_time = time.time()
+            context['duration'] = str(round(end_time - start_time, 2))
+            context['prompt'] = prompt
 
-        if "⚠️" in respuesta:
-            context['error'] = respuesta
-        else:
-            context['response'] = respuesta
+            if "⚠️" in respuesta:
+                context['error'] = respuesta
+            else:
+                context['response'] = respuesta
 
-    return render(request, 'whatsapp_manager/ollama_test.html', context)
+        return render(request, 'whatsapp_manager/ollama_test.html', context)
 
 
 def debug_browser_html(request):
