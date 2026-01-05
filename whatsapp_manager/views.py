@@ -37,8 +37,16 @@ def cerebro_ia(texto, remitente, adjunto=None):
     texto = texto.lower().strip()
     if adjunto:
         print(f"📂 Recibí un archivo tipo: {adjunto}")
+        iacom = "#dsia"
+        if (iacom in texto):
+            texto = texto.replace(iacom, "")
         if adjunto == "IMAGEN":
-            return "🤖 Veo que me enviaste una imagen. Aún no tengo ojos, pero gracias."
+            try:
+                return call_ollama_ai(texto, "Eres un asistente útil.",adjunto)  # Descomenta si usas Ollama
+                pass
+            except:
+                pass
+
         if adjunto == "DOCUMENTO":
             return "📄 Documento recibido. Lo revisaré."
     print(f"🧠 CEREBRO: Analizando '{texto}' de {remitente}")
@@ -645,7 +653,7 @@ DSI_API_URL = "https://dsi-a.datametric-dsi.com/api/chat/"
 PROVIDER_SLUG = "ollama-qwen"
 
 
-def call_ollama_ai(user_text, system_prompt):
+def call_ollama_ai(user_text, system_prompt, adjunto=None):
         """
         Envía el prompt a la API REST externa de DSI.
         Nota: 'system_prompt' se recibe por compatibilidad, pero la API usa 'message' y 'provider_slug'.
