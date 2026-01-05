@@ -349,8 +349,21 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                     # 4. Detectar IMAGEN (Busca imágenes blob dentro de botones, excluyendo avatares)
                     # Nota: Las imágenes enviadas suelen estar en un contenedor role="button"
-                    elif last_msg_container.find_elements(By.CSS_SELECTOR, "div[role='button'] img[src^='blob:']"):
-                        tipo_adjunto = "IMAGEN"
+                    else:
+                        imgs_detectadas = last_msg_container.find_elements(By.CSS_SELECTOR,
+                                                                           "div[role='button'] img[src^='blob:']")
+                        if imgs_detectadas:
+                            tipo_adjunto = "IMAGEN"
+                            # --- INSPECCIÓN DE FORMATO ---
+                            try:
+                                img_src = imgs_detectadas[0].get_attribute("src")
+                                print(f"\n🔎 [DEBUG] Datos de imagen extraídos:")
+                                print(f"   👉 Tipo: Recurso BLOB (Browser Object)")
+                                print(f"   👉 SRC Raw: {img_src}")
+                                # Nota: Un 'blob:' no se puede descargar con requests directo,
+                                # requiere conversión a Base64 via Javascript.
+                            except Exception as e_img:
+                                print(f"   ⚠️ Imagen detectada pero error leyendo src: {e_img}")
                 except Exception as e_media:
                     print(f"⚠️ Error verificando media: {e_media}")
                 # ESTRATEGIA ATÓMICA BASADA EN TU HTML:
