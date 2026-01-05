@@ -12,6 +12,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 import threading
+import base64
+import io
+from PIL import Image
+import uuid
 
 # Configuración de Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -357,11 +361,57 @@ def procesar_nuevos_mensajes(callback_inteligencia):
                             # --- INSPECCIÓN DE FORMATO ---
                             try:
                                 img_src = imgs_detectadas[0].get_attribute("src")
+                                blob_url = imgs_detectadas[0].get_attribute("src")
                                 print(f"\n🔎 [DEBUG] Datos de imagen extraídos:")
                                 print(f"   👉 Tipo: Recurso BLOB (Browser Object)")
                                 print(f"   👉 SRC Raw: {img_src}")
-                                # Nota: Un 'blob:' no se puede descargar con requests directo,
-                                # requiere conversión a Base64 via Javascript.
+                                script_js = """
+                                                                      var uri = arguments[0];
+                                                                      var callback = arguments[1];
+                                                                      fetch(uri).then(function(response) {
+                                                                          return response.blob();
+                                                                      }).then(function(blob) {
+                                                                          var reader = new FileReader();
+                                                                          reader.readAsDataURL(blob);
+                                                                          reader.onloadend = function() {
+                                                                              callback(reader.result);
+                                                                          }
+                                                                      }).catch(function(error) {
+                                                                          callback(null);
+                                                                      });
+                                                                  """
+                                # Usamos execute_async_script para esperar la promesa de JS
+                                resultado_base64 = driver.execute_async_script(script_js, blob_url)
+
+                                if resultado_base64:
+                                    # 2. PROCESAMIENTO CON PILLOW (PIL)
+                                    # Separamos el header 'data:image/jpeg;base64,' del contenido real
+                                    header, encoded = resultado_base64.split(",", 1)
+                                    data_bytes = base64.b64decode(encoded)
+
+                                    # Abrimos imagen en memoria
+                                    imagen_pil = Image.open(io.BytesIO(data_bytes))
+
+                                    # Crear directorio si no existe
+                                    output_dir = "/app/media/whatsapp_received"
+                                    os.makedirs(output_dir, exist_ok=True)
+
+                                    # Generar nombre único y ruta
+                                    nombre_archivo = f"img_{uuid.uuid4().hex[:8]}.webp"
+                                    ruta_final = os.path.join(output_dir, nombre_archivo)
+
+                                    # 3. GUARDAR COMO WEBP (Optimizado)
+                                    # quality=80 ofrece gran compresión sin pérdida visual notable
+                                    imagen_pil.save(ruta_final, "WEBP", quality=80)
+
+                                    print(f"   💾 Imagen guardada y optimizada: {ruta_final}")
+
+                                    # ACTUATOR: Cambiamos el 'tipo_adjunto' para que contenga la RUTA
+                                    # Esto permite pasar la ruta al cerebro_ia en el parámetro 'adjunto'
+                                    tipo_adjunto = ruta_final
+
+                                else:
+                                    print("   ⚠️ JS no pudo recuperar el blob (posible restricción CORS o timeout).")
                             except Exception as e_img:
                                 print(f"   ⚠️ Imagen detectada pero error leyendo src: {e_img}")
                 except Exception as e_media:
