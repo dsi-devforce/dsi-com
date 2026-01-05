@@ -333,7 +333,26 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 texto = ""
                 nombre = "Desconocido"
+                tipo_adjunto = None
+                try:
+                    # 1. Detectar VIDEO (Busca el botón de play)
+                    if last_msg_container.find_elements(By.CSS_SELECTOR, "span[data-icon='video-play']"):
+                        tipo_adjunto = "VIDEO"
 
+                    # 2. Detectar AUDIO (Busca el botón de play de audio/micro)
+                    elif last_msg_container.find_elements(By.CSS_SELECTOR, "span[data-icon='audio-play']"):
+                        tipo_adjunto = "AUDIO"
+
+                    # 3. Detectar DOCUMENTO (Busca iconos que empiecen por doc-)
+                    elif last_msg_container.find_elements(By.CSS_SELECTOR, "span[data-icon^='doc-']"):
+                        tipo_adjunto = "DOCUMENTO"
+
+                    # 4. Detectar IMAGEN (Busca imágenes blob dentro de botones, excluyendo avatares)
+                    # Nota: Las imágenes enviadas suelen estar en un contenedor role="button"
+                    elif last_msg_container.find_elements(By.CSS_SELECTOR, "div[role='button'] img[src^='blob:']"):
+                        tipo_adjunto = "IMAGEN"
+                except Exception as e_media:
+                    print(f"⚠️ Error verificando media: {e_media}")
                 # ESTRATEGIA ATÓMICA BASADA EN TU HTML:
                 # Buscamos el div 'copyable-text' que contiene 'data-pre-plain-text'.
                 # Este nodo es el PADRE del texto y el POSEEDOR del nombre.
@@ -392,8 +411,22 @@ def procesar_nuevos_mensajes(callback_inteligencia):
 
                 print(f"📩 {nombre}: {texto}")
 
-                if texto:
-                    respuesta = callback_inteligencia(texto, nombre)
+                if texto or tipo_adjunto:
+
+                    try:
+                        # INTENTO 1: Pasar el adjunto como 3er parámetro (lo ideal)
+                        # Tu función debería ser: cerebro(texto, nombre, adjunto=None)
+                        respuesta = callback_inteligencia(texto, nombre, adjunto=tipo_adjunto)
+                    except TypeError:
+                        # FALLBACK: Si tu función 'cerebro' vieja no acepta 3 argumentos,
+                        # inyectamos la etiqueta en el texto para no romper el sistema.
+                        if tipo_adjunto:
+                            if not texto:
+                                texto = f"[{tipo_adjunto}]"
+                            else:
+                                texto = f"[{tipo_adjunto}] {texto}"
+
+                        respuesta = callback_inteligencia(texto, nombre)
 
                     if respuesta:
                         print(f"🤖 Respuesta generada: {respuesta[:30]}...")

@@ -29,11 +29,18 @@ from . import browser_service
 bot_thread = None
 
 
-def cerebro_ia(texto, remitente):
+def cerebro_ia(texto, remitente, adjunto=None):
     """
     Función principal de decisión.
     """
+
     texto = texto.lower().strip()
+    if adjunto:
+        print(f"📂 Recibí un archivo tipo: {adjunto}")
+        if adjunto == "IMAGEN":
+            return "🤖 Veo que me enviaste una imagen. Aún no tengo ojos, pero gracias."
+        if adjunto == "DOCUMENTO":
+            return "📄 Documento recibido. Lo revisaré."
     print(f"🧠 CEREBRO: Analizando '{texto}' de {remitente}")
     # --- COMANDO #dsimail ---
     if "#dsimail" in texto:
