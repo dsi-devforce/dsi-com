@@ -173,6 +173,7 @@ class BrowserLinkView(APIView):
 
         return Response(response_data, status=status.HTTP_200_OK)
 
+
 class ConnectionListView(APIView):
     """
     Endpoint para listar las conexiones activas del cliente.
@@ -194,28 +195,59 @@ class ConnectionListView(APIView):
             return Response({"error": "Token requerido"}, status=status.HTTP_401_UNAUTHORIZED)
 
         payload = self.decode_jwt_payload_unsafe(auth_header.split(' ')[1])
-        if not payload: return Response({"error": "Token inválido"}, status=400)
+        if not payload or 'sub' not in payload:
+            return Response({"error": "Token inválido o sin 'sub'"}, status=400)
 
-        # 2. Filtrado por Cliente
+        # 2. Identificación y Auto-aprovisionamiento del Cliente
+        client_api_key = payload['sub']
+        print(f"👤 Buscando (o creando) ApiClient con key: {client_api_key}")
+
+        # Intentamos obtener o crear el cliente automáticamente
+        # Esto soluciona el error de "Cliente no encontrado" en el primer uso
+        client_name = payload.get('name', f"Cliente {client_api_key}")
+
         try:
-            client = ApiClient.objects.get(api_key=payload['sub'])
-            connections = WhatsappConnection.objects.filter(client=client, is_active=True)
+            client, created_client = ApiClient.objects.get_or_create(
+                api_key=client_api_key,
+                defaults={
+                    'name': client_name,
+                    'is_active': True
+                }
+            )
 
-            data = []
-            for conn in connections:
-                data.append({
-                    "id": conn.id,
-                    "name": conn.name,
-                    "phone_number_id": conn.phone_number_id,
-                    "display_phone_number": conn.display_phone_number,
-                    "chatbot": conn.chatbot.name if conn.chatbot else None,
-                    "created_at": conn.created_at.strftime("%Y-%m-%d %H:%M:%S")
-                })
+            if created_client:
+                print(f"✨ Cliente nuevo creado automáticamente: {client.name}")
+            else:
+                if not client.is_active:
+                    return Response(
+                        {"error": "Cliente inactivo"},
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                print(f"✅ Cliente existente validado: {client.name}")
 
-            return Response({"connections": data}, status=status.HTTP_200_OK)
+        except Exception as e:
+            print(f"❌ Error DB gestionando cliente: {e}")
+            return Response(
+                {"error": f"Error interno del servidor: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
-        except ApiClient.DoesNotExist:
-            return Response({"error": "Cliente desconocido"}, status=403)
+        # 3. Obtención de Conexiones
+        # Ahora que tenemos 'client' seguro, filtramos sus conexiones
+        connections = WhatsappConnection.objects.filter(client=client, is_active=True)
+
+        data = []
+        for conn in connections:
+            data.append({
+                "id": conn.id,
+                "name": conn.name,
+                "phone_number_id": conn.phone_number_id,
+                "display_phone_number": conn.display_phone_number,
+                "chatbot": conn.chatbot.name if conn.chatbot else None,
+                "created_at": conn.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        return Response({"connections": data}, status=status.HTTP_200_OK)
 
 class MessageListView(APIView):
     """
