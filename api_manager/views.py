@@ -8,6 +8,7 @@ from api_manager.models import ApiClient
 from whatsapp_manager.models import WhatsappConnection, Message
 from whatsapp_manager import browser_service
 
+
 class SetupConnectionView(APIView):
     """
     Endpoint para inicializar la estructura de datos.
@@ -15,24 +16,26 @@ class SetupConnectionView(APIView):
     """
 
     def decode_jwt_payload_unsafe(self, token):
-        """
-        Decodifica el payload del JWT sin verificar firma (solo para obtener el ID del cliente).
-        En producción, usa: jwt.decode(token, secret, algorithms=["HS256"])
-        """
         try:
-            # Los JWT tienen 3 partes separadas por puntos. La segunda es el payload.
             payload_part = token.split('.')[1]
-            # Ajuste de padding para base64
             padding = '=' * (4 - len(payload_part) % 4)
             decoded_bytes = base64.urlsafe_b64decode(payload_part + padding)
             return json.loads(decoded_bytes)
         except Exception as e:
+            print(f"❌ Error decodificando JWT: {e}")
             return None
 
     def post(self, request):
+        print(f"\n🔍 [DEBUG] Iniciando solicitud POST a SetupConnectionView")
+        print(f"📩 Headers recibidos: {request.headers}")
+        print(f"📦 Body recibido: {request.data}")
+
         # 1. Obtener el Token del Header
         auth_header = request.headers.get('Authorization', '')
+        print(f"🔑 Auth Header: '{auth_header}'")
+
         if not auth_header.startswith('Bearer '):
+            print("❌ Error: Header no empieza con Bearer")
             return Response(
                 {"error": "Formato de token inválido. Use 'Bearer <token>'"},
                 status=status.HTTP_401_UNAUTHORIZED
@@ -40,51 +43,63 @@ class SetupConnectionView(APIView):
 
         token = auth_header.split(' ')[1]
 
-        # 2. Decodificar el Token para saber QUIÉN es el cliente
+        # 2. Decodificar el Token
         payload = self.decode_jwt_payload_unsafe(token)
+        print(f"🔓 Payload decodificado: {payload}")
 
         if not payload or 'sub' not in payload:
+            print("❌ Error: Payload inválido o sin 'sub'")
             return Response(
                 {"error": "Token ilegible o sin 'sub' (subject)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        client_api_key = payload['sub']  # Asumimos que el 'sub' del JWT es tu api_key
+        client_api_key = payload['sub']
+        print(f"👤 Buscando ApiClient con key: {client_api_key}")
 
-        # 3. Validar que el cliente existe en nuestra BD
+        # 3. Validar cliente
         try:
             client = ApiClient.objects.get(api_key=client_api_key, is_active=True)
+            print(f"✅ Cliente encontrado: {client.name} (ID: {client.id})")
         except ApiClient.DoesNotExist:
+            print(f"❌ Error: Cliente no encontrado para key {client_api_key}")
+            # DEBUG EXTRA: Listar clientes disponibles para ver si hay mismatch
+            all_keys = list(ApiClient.objects.values_list('api_key', flat=True))
+            print(f"ℹ️ Keys disponibles en DB: {all_keys}")
+
             return Response(
                 {"error": "Cliente no autorizado o inactivo"},
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # 4. Procesar la solicitud de creación de estructura
-        # Aquí recibimos los datos del body para crear la conexión de WhatsApp
+        # 4. Procesar datos
         data = request.data
         conn_name = data.get('connection_name')
         phone_id = data.get('phone_number_id')
         access_token = data.get('access_token')
 
         if not all([conn_name, phone_id, access_token]):
+            print(
+                f"❌ Error: Faltan campos. Recibido: name={conn_name}, id={phone_id}, token={access_token is not None}")
             return Response(
                 {"error": "Faltan datos: connection_name, phone_number_id, access_token"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Crear o actualizar la conexión vinculada al cliente
+        # Crear/Actualizar
+        print("🛠️ Intentando update_or_create en DB...")
         connection, created = WhatsappConnection.objects.update_or_create(
             phone_number_id=phone_id,
             defaults={
                 'name': conn_name,
                 'access_token': access_token,
-                'client': client,  # ¡Aquí sucede la magia! Vinculamos al cliente
+                'client': client,
                 'is_active': True
             }
         )
 
         action = "created" if created else "updated"
+        print(f"🎉 Éxito: Conexión {action} con ID {connection.id}")
 
         return Response({
             "status": "success",
