@@ -28,80 +28,66 @@ class SetupConnectionView(APIView):
     def post(self, request):
         print(f"\n🔍 [DEBUG] Iniciando solicitud POST a SetupConnectionView")
 
-        # 1. Obtener el Token del Header
+        # 1. Autenticación
         auth_header = request.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
-            return Response(
-                {"error": "Formato de token inválido. Use 'Bearer <token>'"},
-                status=status.HTTP_401_UNAUTHORIZED
-            )
+            return Response({"error": "Formato token inválido"}, status=status.HTTP_401_UNAUTHORIZED)
 
         token = auth_header.split(' ')[1]
-
-        # 2. Decodificar el Token
         payload = self.decode_jwt_payload_unsafe(token)
 
         if not payload or 'sub' not in payload:
-            return Response(
-                {"error": "Token ilegible o sin 'sub' (subject)"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"error": "Token inválido"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # 2. Gestión del Cliente (Auto-aprovisionamiento)
         client_api_key = payload['sub']
-        # Intentamos obtener nombre del payload (username o name) o usamos uno genérico
         client_name = payload.get('username', payload.get('name', f"Cliente {client_api_key}"))
 
-        print(f"👤 Procesando ApiClient con key: {client_api_key}")
+        print(f"👤 Procesando cliente: {client_api_key}")
 
-        # 3. Validar o Crear cliente (Auto-aprovisionamiento)
         try:
             client, created = ApiClient.objects.get_or_create(
                 api_key=client_api_key,
-                defaults={
-                    'name': client_name,
-                    'is_active': True
-                }
+                defaults={'name': client_name, 'is_active': True}
             )
-
-            if created:
-                print(f"✨ Cliente nuevo creado automáticamente: {client.name}")
-            elif not client.is_active:
-                print(f"⛔ Cliente inactivo intentó acceder: {client.name}")
-                return Response(
-                    {"error": "Cliente no autorizado o inactivo"},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            else:
-                print(f"✅ Cliente existente validado: {client.name}")
+            if not client.is_active:
+                return Response({"error": "Cliente inactivo"}, status=status.HTTP_403_FORBIDDEN)
 
         except Exception as e:
-            print(f"❌ Error DB gestionando cliente: {e}")
-            return Response(
-                {"error": f"Error interno gestionando cliente: {str(e)}"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            return Response({"error": str(e)}, status=500)
 
-        # 4. Procesar la solicitud de configuración
+        # 3. Procesamiento de Datos (Lógica Flexible)
         data = request.data
         conn_name = data.get('connection_name')
         phone_id = data.get('phone_number_id')
         access_token = data.get('access_token')
 
-        if not all([conn_name, phone_id, access_token]):
+        # Validación mínima: Solo exigimos el nombre
+        if not conn_name:
             return Response(
-                {"error": "Faltan datos: connection_name, phone_number_id, access_token"},
+                {"error": "Falta el campo obligatorio: connection_name"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Crear o actualizar la conexión vinculada al cliente
+        # AUTO-GENERACIÓN para Bots de Selenium (si vienen vacíos)
+        if not phone_id:
+            # Generamos un ID único interno si no viene el de Meta
+            # Usamos el prefijo 'selenium_' para identificarlo fácil
+            phone_id = f"selenium_{client.id}_{int(time.time())}"
+            print(f"⚠️ phone_number_id vacío. Generando ID interno: {phone_id}")
+
+        if not access_token:
+            access_token = "selenium_local_token"
+            print("⚠️ access_token vacío. Usando token placeholder.")
+
+        # 4. Crear/Actualizar Conexión
         try:
-            print(f"🛠️ Configurando conexión '{conn_name}' para {client.name}...")
             connection, conn_created = WhatsappConnection.objects.update_or_create(
                 phone_number_id=phone_id,
                 defaults={
                     'name': conn_name,
                     'access_token': access_token,
-                    'client': client,  # Vinculación forzosa al cliente del token
+                    'client': client,
                     'is_active': True
                 }
             )
@@ -111,14 +97,14 @@ class SetupConnectionView(APIView):
 
             return Response({
                 "status": "success",
-                "message": f"Estructura configurada exitosamente. Conexión {action}.",
-                "client_identified": client.name,
-                "connection_id": connection.id
+                "message": f"Conexión {action} correctamente.",
+                "connection_id": connection.id,
+                "phone_number_id": phone_id  # Devolvemos el ID generado por si el cliente lo necesita
             }, status=status.HTTP_201_CREATED)
 
         except Exception as e:
             print(f"❌ Error guardando conexión: {e}")
-            return Response({"error": str(e)}, status=500)
+            return Response({"error": f"Error base de datos: {str(e)}"}, status=500)
 class BrowserLinkView(APIView):
     """
     Endpoint para obtener el QR de vinculación o verificar el estado.
