@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     'api_manager',
     'rest_framework',
     'whatsapp_manager',
-    'dsi_api_com',
 ]
 
 MIDDLEWARE = [
