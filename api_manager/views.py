@@ -200,14 +200,15 @@ class ConnectionListView(APIView):
 
         # 2. Identificación y Auto-aprovisionamiento del Cliente
         client_api_key = payload['sub']
+
+        # Intentamos obtener el nombre del payload, o generamos uno genérico
+        client_name = payload.get('username', payload.get('name', f"Cliente {client_api_key}"))
+
         print(f"👤 Buscando (o creando) ApiClient con key: {client_api_key}")
 
-        # Intentamos obtener o crear el cliente automáticamente
-        # Esto soluciona el error de "Cliente no encontrado" en el primer uso
-        client_name = payload.get('name', f"Cliente {client_api_key}")
-
         try:
-            client, created_client = ApiClient.objects.get_or_create(
+            # CORRECCIÓN: Usamos get_or_create para evitar el error 403 si es la primera vez
+            client, created = ApiClient.objects.get_or_create(
                 api_key=client_api_key,
                 defaults={
                     'name': client_name,
@@ -215,15 +216,10 @@ class ConnectionListView(APIView):
                 }
             )
 
-            if created_client:
+            if created:
                 print(f"✨ Cliente nuevo creado automáticamente: {client.name}")
-            else:
-                if not client.is_active:
-                    return Response(
-                        {"error": "Cliente inactivo"},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                print(f"✅ Cliente existente validado: {client.name}")
+            elif not client.is_active:
+                return Response({"error": "Cliente inactivo"}, status=status.HTTP_403_FORBIDDEN)
 
         except Exception as e:
             print(f"❌ Error DB gestionando cliente: {e}")
