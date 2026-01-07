@@ -27,15 +27,10 @@ class SetupConnectionView(APIView):
 
     def post(self, request):
         print(f"\n🔍 [DEBUG] Iniciando solicitud POST a SetupConnectionView")
-        print(f"📩 Headers recibidos: {request.headers}")
-        print(f"📦 Body recibido: {request.data}")
 
         # 1. Obtener el Token del Header
         auth_header = request.headers.get('Authorization', '')
-        print(f"🔑 Auth Header: '{auth_header}'")
-
         if not auth_header.startswith('Bearer '):
-            print("❌ Error: Header no empieza con Bearer")
             return Response(
                 {"error": "Formato de token inválido. Use 'Bearer <token>'"},
                 status=status.HTTP_401_UNAUTHORIZED
@@ -45,69 +40,85 @@ class SetupConnectionView(APIView):
 
         # 2. Decodificar el Token
         payload = self.decode_jwt_payload_unsafe(token)
-        print(f"🔓 Payload decodificado: {payload}")
 
         if not payload or 'sub' not in payload:
-            print("❌ Error: Payload inválido o sin 'sub'")
             return Response(
                 {"error": "Token ilegible o sin 'sub' (subject)"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         client_api_key = payload['sub']
-        print(f"👤 Buscando ApiClient con key: {client_api_key}")
+        # Intentamos obtener nombre del payload (username o name) o usamos uno genérico
+        client_name = payload.get('username', payload.get('name', f"Cliente {client_api_key}"))
 
-        # 3. Validar cliente
+        print(f"👤 Procesando ApiClient con key: {client_api_key}")
+
+        # 3. Validar o Crear cliente (Auto-aprovisionamiento)
         try:
-            client = ApiClient.objects.get(api_key=client_api_key, is_active=True)
-            print(f"✅ Cliente encontrado: {client.name} (ID: {client.id})")
-        except ApiClient.DoesNotExist:
-            print(f"❌ Error: Cliente no encontrado para key {client_api_key}")
-            # DEBUG EXTRA: Listar clientes disponibles para ver si hay mismatch
-            all_keys = list(ApiClient.objects.values_list('api_key', flat=True))
-            print(f"ℹ️ Keys disponibles en DB: {all_keys}")
-
-            return Response(
-                {"error": "Cliente no autorizado o inactivo"},
-                status=status.HTTP_403_FORBIDDEN
+            client, created = ApiClient.objects.get_or_create(
+                api_key=client_api_key,
+                defaults={
+                    'name': client_name,
+                    'is_active': True
+                }
             )
 
-        # 4. Procesar datos
+            if created:
+                print(f"✨ Cliente nuevo creado automáticamente: {client.name}")
+            elif not client.is_active:
+                print(f"⛔ Cliente inactivo intentó acceder: {client.name}")
+                return Response(
+                    {"error": "Cliente no autorizado o inactivo"},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            else:
+                print(f"✅ Cliente existente validado: {client.name}")
+
+        except Exception as e:
+            print(f"❌ Error DB gestionando cliente: {e}")
+            return Response(
+                {"error": f"Error interno gestionando cliente: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        # 4. Procesar la solicitud de configuración
         data = request.data
         conn_name = data.get('connection_name')
         phone_id = data.get('phone_number_id')
         access_token = data.get('access_token')
 
         if not all([conn_name, phone_id, access_token]):
-            print(
-                f"❌ Error: Faltan campos. Recibido: name={conn_name}, id={phone_id}, token={access_token is not None}")
             return Response(
                 {"error": "Faltan datos: connection_name, phone_number_id, access_token"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Crear/Actualizar
-        print("🛠️ Intentando update_or_create en DB...")
-        connection, created = WhatsappConnection.objects.update_or_create(
-            phone_number_id=phone_id,
-            defaults={
-                'name': conn_name,
-                'access_token': access_token,
-                'client': client,
-                'is_active': True
-            }
-        )
+        # Crear o actualizar la conexión vinculada al cliente
+        try:
+            print(f"🛠️ Configurando conexión '{conn_name}' para {client.name}...")
+            connection, conn_created = WhatsappConnection.objects.update_or_create(
+                phone_number_id=phone_id,
+                defaults={
+                    'name': conn_name,
+                    'access_token': access_token,
+                    'client': client,  # Vinculación forzosa al cliente del token
+                    'is_active': True
+                }
+            )
 
-        action = "created" if created else "updated"
-        print(f"🎉 Éxito: Conexión {action} con ID {connection.id}")
+            action = "created" if conn_created else "updated"
+            print(f"🎉 Éxito: Conexión {action} con ID {connection.id}")
 
-        return Response({
-            "status": "success",
-            "message": f"Estructura configurada exitosamente. Conexión {action}.",
-            "client_identified": client.name,
-            "connection_id": connection.id
-        }, status=status.HTTP_201_CREATED)
+            return Response({
+                "status": "success",
+                "message": f"Estructura configurada exitosamente. Conexión {action}.",
+                "client_identified": client.name,
+                "connection_id": connection.id
+            }, status=status.HTTP_201_CREATED)
 
+        except Exception as e:
+            print(f"❌ Error guardando conexión: {e}")
+            return Response({"error": str(e)}, status=500)
 class BrowserLinkView(APIView):
     """
     Endpoint para obtener el QR de vinculación o verificar el estado.
