@@ -39,8 +39,10 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'api_manager',
     'rest_framework',
     'whatsapp_manager',
+    'dsi_api_com',
 ]
 
 MIDDLEWARE = [

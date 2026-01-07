@@ -6,5 +6,6 @@ urlpatterns = [
     # Las URLs de whatsapp_manager estarán bajo /whatsapp/
     # Ejemplo final: https://tu-dominio.com/whatsapp/webhook/
     path('whatsapp/', include('whatsapp_manager.urls')),
+    path('api/v1/', include('dsi_api_com.urls')),
 
 ]

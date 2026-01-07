@@ -239,7 +239,7 @@ def ai_agent_logic(connection, user_text, sender_phone):
 
     # --- RESPUESTA GENERATIVA (OLLAMA) ---
     # Si no cayó en un IF de herramienta específica, dejamos que Qwen conteste libremente.
-    logger.info(f"Delegando a Ollama ({OLLAMA_MODEL})...")
+
     return call_ollama_ai(user_text, system_role)
 # ==============================================================================
 # 3. SERVICIOS AUXILIARES (INFRAESTRUCTURA)

@@ -1,7 +1,8 @@
 from django.db import models
 
+from api_manager.models import ApiClient
 
-# ... existing code ...
+
 class Chatbot(models.Model):
     name = models.CharField(max_length=100, help_text="Nombre interno del bot (ej: Ventas, Soporte)")
     description = models.TextField(blank=True)
@@ -13,8 +14,9 @@ class Chatbot(models.Model):
 
 
 class WhatsappConnection(models.Model):
+    client = models.ForeignKey(ApiClient, on_delete=models.CASCADE, related_name='connections', null=True, blank=True,
+                               help_text="Cliente externo propietario de esta conexión")
     name = models.CharField(max_length=100, help_text="Nombre identificativo de la conexión")
-    # ... existing code ...
     access_token = models.TextField(help_text="Token de acceso permanente o de larga duración")
     phone_number_id = models.CharField(max_length=50, unique=True,
                                        help_text="ID del número en Meta/WhatsApp Business API")
