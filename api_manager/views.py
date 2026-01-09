@@ -1,5 +1,6 @@
 import json
 import base64
+import threading
 import time
 
 from django.shortcuts import get_object_or_404
@@ -9,6 +10,7 @@ from rest_framework import status
 from api_manager.models import ApiClient
 from whatsapp_manager.models import WhatsappConnection, Message
 from whatsapp_manager import browser_service
+from whatsapp_manager.views import cerebro_ia
 
 
 class SetupConnectionView(APIView):
@@ -158,8 +160,24 @@ class BrowserLinkView(APIView):
         # 5. Lógica de Respuesta
         if estado == "YA_VINCULADO":
             response_data["message"] = "✅ El bot ya está vinculado y listo."
-            # Opcional: Aquí podrías disparar el hilo del bot si no está corriendo
-            # browser_service.ensure_bot_running(connection.id)
+
+            # --- AUTO-ARRANQUE DEL BOT ---
+            # Verificamos si ya hay un hilo corriendo para esta conexión específica
+            session_ctx = browser_service.get_session_context(connection.id)
+            if not (session_ctx.get('thread') and session_ctx['thread'].is_alive()):
+                print(f"🚀 [API] Iniciando bot automáticamente para ID {connection.id}...")
+
+                # Creamos y lanzamos el hilo usando la función lógica 'cerebro_ia' definida en este archivo
+                t = threading.Thread(
+                    target=browser_service.iniciar_bucle_bot,
+                    args=(connection.id, cerebro_ia),
+                    name=f"Bot_{connection.id}",
+                    daemon=True
+                )
+                t.start()
+                session_ctx['thread'] = t
+            else:
+                print(f"ℹ️ [API] El bot para ID {connection.id} ya estaba corriendo.")
 
         elif estado == "ESPERANDO_ESCANEO":
             response_data["message"] = "📸 Escanea el código QR proporcionado."
